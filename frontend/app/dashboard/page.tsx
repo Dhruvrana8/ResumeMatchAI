@@ -1,5 +1,25 @@
-import { DashboardNav } from "@/components/dashboard-nav"
-import { Card } from "@/components/ui/card"
+import { DashboardNav } from "@/components/dashboard-nav";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  FileText,
+  Target,
+  TrendingUp,
+  Upload,
+  Sparkles,
+  CheckCircle2,
+  Clock,
+  BarChart3,
+  ArrowUpRight,
+  FileCheck,
+} from "lucide-react";
 
 export default function DashboardPage() {
   return (
@@ -7,173 +27,214 @@ export default function DashboardPage() {
       <DashboardNav />
 
       <main className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Welcome to ResumeMatchAI</h1>
-          <p className="text-muted-foreground text-lg">Optimize your resume for any job with AI-powered ATS analysis</p>
+          <h1 className="text-4xl font-bold mb-2">Welcome back, John!</h1>
+          <p className="text-muted-foreground text-lg">
+            Here's your resume optimization dashboard
+          </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="p-6 hover:border-primary/50 transition-colors">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-primary"
-                >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
-                  <polyline points="10 9 9 9 8 9" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-1">Upload Resume</h3>
-                <p className="text-sm text-muted-foreground">Upload your resume to get started with ATS analysis</p>
-              </div>
-            </div>
+        {/* Stats Cards */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
+          <Card className="border-border/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Total Resumes
+              </CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">12</div>
+              <p className="text-xs text-muted-foreground">
+                <span className="text-green-500">+2</span> from last month
+              </p>
+            </CardContent>
           </Card>
 
-          <Card className="p-6 hover:border-primary/50 transition-colors">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-primary"
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-1">ATS Analysis</h3>
-                <p className="text-sm text-muted-foreground">Get instant feedback on your resume's ATS compatibility</p>
-              </div>
-            </div>
+          <Card className="border-border/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Avg Match Score
+              </CardTitle>
+              <Target className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">78%</div>
+              <p className="text-xs text-muted-foreground">
+                <span className="text-green-500">+5%</span> improvement
+              </p>
+            </CardContent>
           </Card>
 
-          <Card className="p-6 hover:border-primary/50 transition-colors">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-primary"
-                >
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-1">Match Score</h3>
-                <p className="text-sm text-muted-foreground">See how well your resume matches job descriptions</p>
-              </div>
-            </div>
+          <Card className="border-border/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Applications
+              </CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">24</div>
+              <p className="text-xs text-muted-foreground">
+                <span className="text-green-500">+8</span> this week
+              </p>
+            </CardContent>
           </Card>
 
-          <Card className="p-6 hover:border-primary/50 transition-colors">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-primary"
-                >
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-1">Optimize Content</h3>
-                <p className="text-sm text-muted-foreground">Get AI-powered suggestions to improve your resume</p>
-              </div>
-            </div>
+          <Card className="border-border/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Interviews</CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">6</div>
+              <p className="text-xs text-muted-foreground">
+                25% conversion rate
+              </p>
+            </CardContent>
           </Card>
+        </div>
 
-          <Card className="p-6 hover:border-primary/50 transition-colors">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-primary"
-                >
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-1">Export Results</h3>
-                <p className="text-sm text-muted-foreground">Download your optimized resume in multiple formats</p>
-              </div>
-            </div>
-          </Card>
+        {/* Quick Actions */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold mb-4">Quick Actions</h2>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {/* Upload Resume */}
+            <Card className="group hover:shadow-lg transition-all duration-300 hover:border-primary/50 cursor-pointer border-border/50">
+              <CardHeader>
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Upload className="w-6 h-6 text-white" />
+                </div>
+                <CardTitle className="flex items-center justify-between">
+                  Upload Resume
+                  <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                </CardTitle>
+                <CardDescription>
+                  Upload a new resume to get started with ATS analysis
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full">
+                  <Upload className="mr-2 w-4 h-4" />
+                  Upload Now
+                </Button>
+              </CardContent>
+            </Card>
 
-          <Card className="p-6 hover:border-primary/50 transition-colors">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-primary"
-                >
-                  <line x1="12" y1="1" x2="12" y2="23" />
-                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                </svg>
+            {/* Analyze Resume */}
+            <Card className="group hover:shadow-lg transition-all duration-300 hover:border-primary/50 cursor-pointer border-border/50">
+              <CardHeader>
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <BarChart3 className="w-6 h-6 text-white" />
+                </div>
+                <CardTitle className="flex items-center justify-between">
+                  ATS Analysis
+                  <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                </CardTitle>
+                <CardDescription>
+                  Get detailed ATS compatibility analysis for your resume
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button variant="outline" className="w-full">
+                  <BarChart3 className="mr-2 w-4 h-4" />
+                  Analyze
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Match Job */}
+            <Card className="group hover:shadow-lg transition-all duration-300 hover:border-primary/50 cursor-pointer border-border/50">
+              <CardHeader>
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Target className="w-6 h-6 text-white" />
+                </div>
+                <CardTitle className="flex items-center justify-between">
+                  Match to Job
+                  <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                </CardTitle>
+                <CardDescription>
+                  See how well your resume matches a job description
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button variant="outline" className="w-full">
+                  <Target className="mr-2 w-4 h-4" />
+                  Match
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div>
+          <h2 className="text-2xl font-bold mb-4">Recent Activity</h2>
+          <Card className="border-border/50">
+            <CardContent className="p-6">
+              <div className="space-y-4">
+                {/* Activity Item 1 */}
+                <div className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0">
+                  <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                    <FileCheck className="w-5 h-5 text-green-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">Resume analyzed successfully</p>
+                    <p className="text-sm text-muted-foreground">
+                      Software_Engineer_Resume.pdf scored 85% ATS compatibility
+                    </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Badge variant="secondary">High Match</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        2 hours ago
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Activity Item 2 */}
+                <div className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0">
+                  <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                    <Upload className="w-5 h-5 text-blue-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">New resume uploaded</p>
+                    <p className="text-sm text-muted-foreground">
+                      Product_Manager_Resume.pdf
+                    </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Badge variant="outline">Processing</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        5 hours ago
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Activity Item 3 */}
+                <div className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0">
+                  <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-5 h-5 text-purple-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">AI optimization completed</p>
+                    <p className="text-sm text-muted-foreground">
+                      15 improvements suggested for your resume
+                    </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Badge variant="secondary">Action Required</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        1 day ago
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="font-semibold mb-1">Track Applications</h3>
-                <p className="text-sm text-muted-foreground">Keep track of all your job applications in one place</p>
-              </div>
-            </div>
+            </CardContent>
           </Card>
         </div>
       </main>
     </div>
-  )
+  );
 }
