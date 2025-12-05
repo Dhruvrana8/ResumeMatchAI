@@ -37,12 +37,12 @@ export function LoginForm() {
         password,
       };
 
-      const responce: any = await loginController(user);
+      const response: any = await loginController(user);
 
-      if (responce.status === 200) {
+      if (response.status === 200) {
         router.replace("/dashboard");
       } else {
-        setError(responce.message);
+        setError(response.response.data.detail);
         setIsLoading(false);
       }
     } catch (err) {
@@ -53,7 +53,11 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {error && <Alert variant="destructive">{error}</Alert>}
+      {error && (
+        <Alert variant="destructive" className="w-full flex items-center">
+          {error}
+        </Alert>
+      )}
 
       <div className="space-y-4">
         <div className="space-y-2">

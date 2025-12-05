@@ -4,11 +4,11 @@ import { loginApiGateway } from "./api_gateway";
 
 const loginController = async (user: User) => {
   try {
-    const responce = await loginApiGateway({
+    const response = await loginApiGateway({
       email: user.email,
       password: user.password,
     });
-    return responce;
+    return response;
   } catch (err) {
     console.log(err);
     return err;
