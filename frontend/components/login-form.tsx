@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 
+import { loginController } from "@/workflow/auth/login/controller";
+
 export function LoginForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -23,9 +25,6 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
       // Basic validation
       if (!email || !password) {
         setError("Please fill in all fields");
@@ -33,8 +32,19 @@ export function LoginForm() {
         return;
       }
 
-      // Navigate to dashboard
-      router.push("/dashboard");
+      const user = {
+        email,
+        password,
+      };
+
+      const responce: any = await loginController(user);
+
+      if (responce.status === 200) {
+        router.replace("/dashboard");
+      } else {
+        setError(responce.message);
+        setIsLoading(false);
+      }
     } catch (err) {
       setError("An error occurred. Please try again.");
       setIsLoading(false);
