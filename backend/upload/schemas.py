@@ -1,13 +1,16 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
+import uuid
 
 class DocumentUploadResponse(BaseModel):
-    document_id: int
+    document_id: UUID = Field(default_factory=uuid.uuid4)
     filename: str
     s3_key: str
     upload_date: datetime
     file_size: int
+    user_id: UUID = Field(default_factory=uuid.uuid4)
     
     class Config:
         from_attributes = True

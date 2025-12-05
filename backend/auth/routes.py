@@ -1,3 +1,5 @@
+from exceptions import UserAlreadyExistError
+from exceptions import UserNotFoundError
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -28,10 +30,7 @@ async def signup(user_data: UserCreate, db: Session = Depends(get_db)):
     # Check if user already exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
+        raise UserAlreadyExistError()
     
     # Create new user
     hashed_password = get_password_hash(user_data.password)
@@ -57,11 +56,7 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     user = authenticate_user(db, user_credentials.email, user_credentials.password)
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise UserNotFoundError()
     
     # Create tokens
     access_token = create_access_token(
@@ -89,10 +84,7 @@ async def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
     # Get user
     user = db.query(User).filter(User.email == token_data.email).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
+        raise UserNotFoundError()
     
     # Create new tokens
     new_access_token = create_access_token(
