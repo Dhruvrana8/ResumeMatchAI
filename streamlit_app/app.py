@@ -2,6 +2,9 @@ import streamlit as st
 import sys
 import os
 
+
+from utils.keywords_extraction import get_keywords
+
 # Add streamlit_app directory to path for imports
 app_dir = os.path.dirname(os.path.abspath(__file__))
 if app_dir not in sys.path:
@@ -103,11 +106,12 @@ def page_2_resume_upload():
     
     # Run Keyword Extraction button
     col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
+    with col1:
         if st.button("Run Keyword Extraction", type="primary", use_container_width=True):
             if st.session_state.job_description.strip() and st.session_state.resume_file is not None:
                 with st.spinner("Extracting keywords from job description and resume... This may take a moment."):
                     try:
+                        st.session_state.page = 3
                         st.rerun()
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
@@ -117,12 +121,51 @@ def page_2_resume_upload():
                     st.error("Please provide a job description first.")
                 if st.session_state.resume_file is None:
                     st.error("Please upload a resume file.")
+
+
+def page_3_keywords_extraction():
+    """PAGE 3: Keywords Extraction"""
+    st.title("Keywords Extraction")
+    st.subheader("Step 3 — Review Job Description Keywords")
+
+    # Back button
+    if st.button("← Back", type="secondary"):
+        st.session_state.page = 2
+        st.rerun()
+    
+    st.markdown("---")
+
+    with st.spinner("Extracting keywords from job description..."):
+        keywords = get_keywords(st.session_state.job_description)
+    
+    st.session_state.jd_keywords = keywords
+    
+    if st.session_state.jd_keywords:
+        st.write("Keywords extracted from the Job Description:")
+        st.code(st.session_state.jd_keywords) # Display as code for clarity, or format differently if preferred
+    else:
+        st.warning("No keywords could be extracted from the job description.")
+
+    st.markdown("---")
+
+    # Next button to proceed to the next page (e.g., resume keyword extraction or comparison)
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("Next →", type="primary", use_container_width=True):
+            st.session_state.page = 4 # Assuming page 4 is the next step
+            st.rerun()
+    
+    
+    
+
 # Main app logic
 def main():
     if st.session_state.page == 1:
         page_1_job_description()
     elif st.session_state.page == 2:
         page_2_resume_upload()
+    elif st.session_state.page == 3:
+        page_3_keywords_extraction()
     else:
         st.session_state.page = 1
         st.rerun()
