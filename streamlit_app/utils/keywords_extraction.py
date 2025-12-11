@@ -69,7 +69,7 @@ list_of_Job_descriptions_keywords = [
 ]
 
 
-def get_keywords(text: str, min_len: int = 3) -> list[str]:
+def get_keywords(text: str, min_len: int = 2, with_nouns: bool = True, with_stopwords: bool = False) -> list[str]:
     """
     Extracts keywords from a given text (e.g., a job description).
     Filters nouns, proper nouns, verbs, removes stopwords, lemmatizes, stems,
@@ -80,20 +80,43 @@ def get_keywords(text: str, min_len: int = 3) -> list[str]:
 
     for token in doc:
         # Only nouns, proper nouns, and verbs of sufficient length
-        if token.pos_ not in ["NOUN", "PROPN", "VERB"]:
+        if with_nouns and token.pos_ not in ["NOUN", "PROPN", "VERB"]:
             continue
 
         word = token.text.lower()
         if not word.isalnum() or len(word) < min_len:
             continue
 
-        if word in stop_words:
+        if not with_stopwords and word in stop_words:
             continue
 
         # Lemmatize
         lemma = token.lemma_.lower()
 
         # Stem
+        stem = ps.stem(lemma)
+        processed_tokens.append(stem)
+
+    # Remove duplicates and sort
+    unique_tokens = sorted(list(set(processed_tokens)))
+    return unique_tokens
+
+def get_job_importance_keywords(text: str) -> list[str]:
+    """
+    Extracts keywords from a given text (e.g., a job description) that are important for the job.
+    """
+    doc = nlp(text)
+    processed_tokens = []
+
+    for token in doc:
+        if token.pos_ not in ["NOUN", "PROPN", "VERB"]:
+            continue
+        word = token.text.lower()
+        if not word.isalnum() or len(word) < min_len:
+            continue
+        if not with_stopwords and word in stop_words:
+            continue
+        lemma = token.lemma_.lower()
         stem = ps.stem(lemma)
         processed_tokens.append(stem)
 

@@ -1,9 +1,12 @@
 import streamlit as st
 import sys
 import os
-
+from io import BytesIO
+from pypdf import PdfReader
+from docx import Document
 
 from utils.keywords_extraction import get_keywords
+from utils.resume_keywords import get_personal_info, get_websites
 
 # Add streamlit_app directory to path for imports
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +36,10 @@ if 'resume_keywords' not in st.session_state:
     st.session_state.resume_keywords = None
 if 'results' not in st.session_state:
     st.session_state.results = None
+if 'personal_info' not in st.session_state:
+    st.session_state.personal_info = None
+if 'websites' not in st.session_state:
+    st.session_state.websites = None
 
 def page_1_job_description():
     """PAGE 1: Job Description Input"""
@@ -100,6 +107,14 @@ def page_2_resume_upload():
             st.error(f"File size ({uploaded_file.size / (1024*1024):.2f} MB) exceeds maximum allowed size (100 MB)")
         else:
             st.session_state.resume_file = uploaded_file
+            # Need to Read the Resume File
+            if uploaded_file.type == "application/pdf":
+                pdf_reader = PdfReader(uploaded_file)
+                st.session_state.resume_text = " ".join([page.extract_text() for page in pdf_reader.pages])
+            elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                doc = Document(BytesIO(uploaded_file.read()))
+                st.session_state.resume_text = " ".join([paragraph.text for paragraph in doc.paragraphs])
+                uploaded_file.seek(0)  # Reset file pointer
             st.success(f"File uploaded: {uploaded_file.name} ({uploaded_file.size / 1024:.2f} KB)")
     
     st.markdown("---")
@@ -122,41 +137,130 @@ def page_2_resume_upload():
                 if st.session_state.resume_file is None:
                     st.error("Please upload a resume file.")
 
-
-def page_3_keywords_extraction():
-    """PAGE 3: Keywords Extraction"""
-    st.title("Keywords Extraction")
-    st.subheader("Step 3 — Review Job Description Keywords")
+    
+def page_3_keywords_extraction_and_results():
+    """PAGE 4: Display All Extracted Information"""
+    st.title("Resume ATS Scanner — Results")
+    st.subheader("Step 3 — All Extracted Information")
 
     # Back button
     if st.button("← Back", type="secondary"):
-        st.session_state.page = 2
+        st.session_state.page = 3
         st.rerun()
     
     st.markdown("---")
 
-    with st.spinner("Extracting keywords from job description..."):
-        keywords = get_keywords(st.session_state.job_description)
+    # Extract all information if not already extracted
+    if st.session_state.jd_keywords is None:
+        with st.spinner("Extracting keywords from job description..."):
+            st.session_state.jd_keywords = get_keywords(st.session_state.job_description)
+            
+    if st.session_state.resume_keywords is None:
+        with st.spinner("Extracting keywords from resume..."):
+            st.session_state.resume_keywords = get_keywords(st.session_state.resume_text)
     
-    st.session_state.jd_keywords = keywords
+    if st.session_state.personal_info is None:
+        with st.spinner("Extracting personal information..."):
+            st.session_state.personal_info = get_personal_info(st.session_state.resume_text)
     
-    if st.session_state.jd_keywords:
-        st.write("Keywords extracted from the Job Description:")
-        st.code(st.session_state.jd_keywords) # Display as code for clarity, or format differently if preferred
-    else:
-        st.warning("No keywords could be extracted from the job description.")
+    if st.session_state.websites is None:
+        with st.spinner("Extracting websites..."):
+            st.session_state.websites = get_websites(st.session_state.resume_text)
+
+    # Display all information in organized sections
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### 📋 Job Description Keywords")
+        if st.session_state.jd_keywords:
+            # Display keywords as tags
+            keywords_str = ", ".join(st.session_state.jd_keywords[:50])  # Show first 50
+            st.write(keywords_str)
+            if len(st.session_state.jd_keywords) > 50:
+                st.caption(f"... and {len(st.session_state.jd_keywords) - 50} more keywords")
+            st.caption(f"Total: {len(st.session_state.jd_keywords)} keywords")
+        else:
+            st.warning("No keywords extracted from job description.")
+
+    with col2:
+        st.markdown("### 📄 Resume Keywords")
+        if st.session_state.resume_keywords:
+            keywords_str = ", ".join(st.session_state.resume_keywords[:50])  # Show first 50
+            st.write(keywords_str)
+            if len(st.session_state.resume_keywords) > 50:
+                st.caption(f"... and {len(st.session_state.resume_keywords) - 50} more keywords")
+            st.caption(f"Total: {len(st.session_state.resume_keywords)} keywords")
+        else:
+            st.warning("No keywords extracted from resume.")
 
     st.markdown("---")
 
-    # Next button to proceed to the next page (e.g., resume keyword extraction or comparison)
+    # Personal Information Section
+    st.markdown("### 👤 Personal Information")
+    personal_info = st.session_state.personal_info
+    
+    if personal_info:
+        info_col1, info_col2 = st.columns(2)
+        
+        with info_col1:
+            st.markdown("**Name:**")
+            st.write(personal_info.get("name", "Not found") or "Not found")
+            
+            st.markdown("**Email:**")
+            st.write(personal_info.get("email", "Not found") or "Not found")
+        
+        with info_col2:
+            st.markdown("**Phone Number:**")
+            st.write(personal_info.get("phone_number", "Not found") or "Not found")
+            
+            if personal_info.get("major_city") or personal_info.get("province"):
+                st.markdown("**Location:**")
+                location_parts = []
+                if personal_info.get("major_city"):
+                    location_parts.append(personal_info["major_city"].title())
+                if personal_info.get("province"):
+                    location_parts.append(personal_info["province"].upper())
+                st.write(", ".join(location_parts) if location_parts else "Not found")
+    else:
+        st.warning("No personal information could be extracted from the resume.")
+
+    st.markdown("---")
+    
+    # Job Description Keywords Section
+    st.markdown("### 📋 Job Description Keywords")
+    jd_keywords = st.session_state.jd_keywords
+    if jd_keywords:
+        st.write(jd_keywords)
+    else:
+        st.warning("No keywords extracted from job description.")
+
+    # Websites Section
+    st.markdown("### 🌐 Websites Found in Resume")
+    websites = st.session_state.websites
+    
+    if websites:
+        st.write(f"Found {len(websites)} website(s):")
+        for i, website in enumerate(websites, 1):
+            st.write(f"{i}. {website}")
+    else:
+        st.info("No websites found in the resume.")
+
+    st.markdown("---")
+
+    # Action buttons
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        if st.button("Next →", type="primary", use_container_width=True):
-            st.session_state.page = 4 # Assuming page 4 is the next step
+        if st.button("🔄 Start Over", type="primary", use_container_width=True):
+            # Reset session state
+            st.session_state.page = 1
+            st.session_state.job_description = ""
+            st.session_state.resume_file = None
+            st.session_state.resume_text = None
+            st.session_state.jd_keywords = None
+            st.session_state.resume_keywords = None
+            st.session_state.personal_info = None
+            st.session_state.websites = None
             st.rerun()
-    
-    
-    
 
 # Main app logic
 def main():
@@ -165,7 +269,7 @@ def main():
     elif st.session_state.page == 2:
         page_2_resume_upload()
     elif st.session_state.page == 3:
-        page_3_keywords_extraction()
+        page_3_keywords_extraction_and_results()
     else:
         st.session_state.page = 1
         st.rerun()
