@@ -2,11 +2,11 @@ import streamlit as st
 import sys
 import os
 from io import BytesIO
-from pypdf import PdfReader
-from docx import Document
+import pdfplumber
+import docx2txt
 
 from utils.keywords_extraction import get_keywords
-from utils.resume_keywords import get_personal_info, get_websites
+from utils.resume_keywords import get_personal_info, get_websites, get_job_info
 
 # Add streamlit_app directory to path for imports
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,6 +40,8 @@ if 'personal_info' not in st.session_state:
     st.session_state.personal_info = None
 if 'websites' not in st.session_state:
     st.session_state.websites = None
+if 'job_info' not in st.session_state:
+    st.session_state.job_info = None
 
 def page_1_job_description():
     """PAGE 1: Job Description Input"""
@@ -109,11 +111,20 @@ def page_2_resume_upload():
             st.session_state.resume_file = uploaded_file
             # Need to Read the Resume File
             if uploaded_file.type == "application/pdf":
-                pdf_reader = PdfReader(uploaded_file)
-                st.session_state.resume_text = " ".join([page.extract_text() for page in pdf_reader.pages])
+                # Use pdfplumber for better text extraction
+                with pdfplumber.open(BytesIO(uploaded_file.read())) as pdf:
+                    # Preserve newlines by joining pages with newlines
+                    page_texts = []
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            page_texts.append(page_text)
+                    st.session_state.resume_text = "\n".join(page_texts)
+                uploaded_file.seek(0)  # Reset file pointer
             elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                doc = Document(BytesIO(uploaded_file.read()))
-                st.session_state.resume_text = " ".join([paragraph.text for paragraph in doc.paragraphs])
+                # Use docx2txt for better text extraction
+                text = docx2txt.process(BytesIO(uploaded_file.read()))
+                st.session_state.resume_text = text if text else ""
                 uploaded_file.seek(0)  # Reset file pointer
             st.success(f"File uploaded: {uploaded_file.name} ({uploaded_file.size / 1024:.2f} KB)")
     
@@ -166,6 +177,10 @@ def page_3_keywords_extraction_and_results():
     if st.session_state.websites is None:
         with st.spinner("Extracting websites..."):
             st.session_state.websites = get_websites(st.session_state.resume_text)
+    
+    if st.session_state.job_info is None:
+        with st.spinner("Extracting job information..."):
+            st.session_state.job_info = get_job_info(st.session_state.job_description)
 
     # Display all information in organized sections
     col1, col2 = st.columns(2)
@@ -192,6 +207,35 @@ def page_3_keywords_extraction_and_results():
             st.caption(f"Total: {len(st.session_state.resume_keywords)} keywords")
         else:
             st.warning("No keywords extracted from resume.")
+
+    st.markdown("---")
+
+    # Job Information Section
+    st.markdown("### 💼 Job Information")
+    job_info = st.session_state.job_info
+    
+    if job_info:
+        job_col1, job_col2 = st.columns(2)
+        
+        with job_col1:
+            st.markdown("**Company Name:**")
+            st.write(job_info.get("company_name", "Not found") or "Not found")
+            
+            st.markdown("**Position:**")
+            st.write(job_info.get("position", "Not found") or "Not found")
+        
+        with job_col2:
+            st.markdown("**Location:**")
+            st.write(job_info.get("location", "Not found") or "Not found")
+            
+            st.markdown("**Website:**")
+            website = job_info.get("website", None)
+            if website:
+                st.write(website)
+            else:
+                st.write("Not found")
+    else:
+        st.warning("No job information could be extracted from the job description.")
 
     st.markdown("---")
 
@@ -246,6 +290,9 @@ def page_3_keywords_extraction_and_results():
         st.info("No websites found in the resume.")
 
     st.markdown("---")
+    
+    # # Just need to see the PDF Content
+    # st.write(st.session_state.resume_text)
 
     # Action buttons
     col1, col2, col3 = st.columns([1, 1, 1])
@@ -260,6 +307,7 @@ def page_3_keywords_extraction_and_results():
             st.session_state.resume_keywords = None
             st.session_state.personal_info = None
             st.session_state.websites = None
+            st.session_state.job_info = None
             st.rerun()
 
 # Main app logic
