@@ -1,228 +1,263 @@
-# Resume ATS Scanner
+# ResumeMatchAI — ATS Resume Scanner
 
-A full-stack web application for scanning and analyzing resumes using Applicant Tracking System (ATS) technology. Built with Next.js frontend and FastAPI backend.
+<div align="center">
+  <img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python Version">
+  <img src="https://img.shields.io/badge/Streamlit-1.28+-red.svg" alt="Streamlit">
+  <img src="https://img.shields.io/badge/spaCy-3.7+-green.svg" alt="spaCy">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
+</div>
 
-## Features
+## 🎯 Overview
 
-- 🔐 **User Authentication**: Secure JWT-based authentication with signup and login
-- 📄 **Document Upload**: Upload resumes (PDF/DOCX) with drag-and-drop support
-- ☁️ **Cloud Storage**: Documents stored securely in AWS S3
-- 📊 **Document Management**: View, download, and delete uploaded resumes
-- 🎨 **Modern UI**: Beautiful gradient design with animations and responsive layout
-- 🔒 **Protected Routes**: Dashboard accessible only to authenticated users
+**ResumeMatchAI** is an advanced Applicant Tracking System (ATS) resume scanner that analyzes resumes against job descriptions to provide comprehensive compatibility scores and actionable improvement recommendations. Using natural language processing and machine learning, it helps job seekers optimize their resumes for better ATS performance.
 
-## Tech Stack
+### ✨ Key Features
 
-### Backend
+- **🔍 Advanced ATS Scoring**: Comprehensive scoring algorithm with 7 weighted factors
+- **🤖 AI-Powered Analysis**: Meta Llama 3.2-1B model for professional HR-level insights
+- **📄 Direct Document Analysis**: Optional OCR-based file processing (experimental)
+- **📊 Keyword Analysis**: Intelligent keyword matching with similarity detection
+- **👤 Enhanced Personal Info Extraction**: Accurate name, email, phone, and location detection
+- **🎯 Smart Recommendations**: Prioritized, actionable feedback for resume improvement
+- **📄 Multi-Format Support**: PDF and DOCX resume processing
+- **🌐 Web-Friendly Interface**: Clean Streamlit web application
+- **⚡ Real-time Analysis**: Instant results with detailed breakdowns
 
-- **FastAPI**: Modern Python web framework
-- **PostgreSQL**: Database for user and document metadata
-- **SQLAlchemy**: ORM for database operations
-- **JWT**: Token-based authentication
-- **AWS S3**: Cloud storage for documents
-- **Bcrypt**: Password hashing
-
-### Frontend
-
-- **Next.js 14+**: React framework with App Router
-- **TypeScript**: Type-safe JavaScript
-- **TailwindCSS**: Utility-first CSS framework
-- **Axios**: HTTP client with interceptors
-- **React Context**: Global state management
-
-## Project Structure
-
-```
-ResumeMatchAI/
-├── backend/
-│   ├── auth/              # Authentication module
-│   │   ├── routes.py      # Auth endpoints
-│   │   ├── schemas.py     # Pydantic models
-│   │   └── utils.py       # JWT & password utilities
-│   ├── upload/            # Document upload module
-│   │   ├── routes.py      # Upload endpoints
-│   │   ├── schemas.py     # Document schemas
-│   │   └── s3_service.py  # S3 integration
-│   ├── database.py        # Database configuration
-│   ├── models.py          # SQLAlchemy models
-│   ├── main.py            # FastAPI application
-│   └── requirements.txt   # Python dependencies
-│
-└── frontend/
-    └── src/
-        ├── app/           # Next.js pages
-        │   ├── login/     # Login page
-        │   ├── signup/    # Signup page
-        │   ├── dashboard/ # Protected dashboard
-        │   └── page.tsx   # Landing page
-        ├── contexts/      # React contexts
-        │   └── AuthContext.tsx
-        └── lib/           # Utilities
-            ├── api.ts     # Axios client
-            ├── auth-controller.ts
-            └── document-controller.ts
-```
-
-## Setup Instructions
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Python 3.8+
-- Node.js 18+
-- PostgreSQL
-- AWS Account (for S3)
+- Python 3.11 or higher
+- pip package manager
+- Virtual environment (recommended)
 
-### Backend Setup
+### Installation
 
-1. Navigate to backend directory:
+1. **Clone the repository**
 
-```bash
-cd backend
-```
+   ```bash
+   git clone https://github.com/yourusername/ResumeMatchAI.git
+   cd ResumeMatchAI/streamlit_app
+   ```
 
-2. Create and activate virtual environment:
+2. **Create and activate virtual environment**
 
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-3. Install dependencies:
+3. **Install dependencies**
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-4. Create `.env` file (copy from `.env.example`):
+4. **Download spaCy language model**
+   ```bash
+   python -m spacy download en_core_web_sm
+   ```
 
-```bash
-cp .env.example .env
-```
-
-5. Configure environment variables in `.env`:
-
-```env
-DATABASE_URL=postgresql://username:password@localhost:5432/resumematch_db
-SECRET_KEY=your-secret-key-here
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-AWS_REGION=us-east-1
-S3_BUCKET_NAME=your-bucket-name
-FRONTEND_URL=http://localhost:3000
-```
-
-6. Create PostgreSQL database:
+### Running the Application
 
 ```bash
-createdb resumematch_db
+streamlit run app.py
 ```
 
-7. Run the server:
+Open your browser to `http://localhost:8501` to access the application.
 
-```bash
-uvicorn main:app --reload
+## 📋 How It Works
+
+### 1. **Job Description Input**
+
+Paste the complete job description you're applying for. The system will extract key requirements and skills.
+
+### 2. **Resume Upload**
+
+Upload your resume in PDF or DOCX format. The system supports text extraction from various document formats.
+
+### 3. **ATS Analysis**
+
+The system performs comprehensive analysis including:
+
+- **Keyword Matching**: Exact and similar keyword detection
+- **Personal Information**: Name, contact details, and location extraction
+- **Skills Alignment**: Technical skills assessment
+- **Experience Relevance**: Work experience analysis
+- **Formatting Quality**: Resume structure evaluation
+
+### 4. **AI-Powered Profile Extraction** (Optional)
+
+Extract structured user profile from your resume using Meta's Llama 3.2-1B model:
+
+- **Direct File Processing**: Analyzes your resume file with OCR-enhanced extraction
+- **Structured Data Extraction**: Personal info, skills, experience, education, certifications, projects
+- **PostgreSQL Storage**: Automatically saves extracted profiles to PostgreSQL
+- **JSON Format**: Clean, structured data ready for integration
+
+### 5. **Results & Recommendations**
+
+Receive a detailed ATS compatibility report with:
+
+- Overall score (0-100) with letter grade
+- Component breakdown with visual progress bars
+- Prioritized improvement recommendations
+- Pass rate predictions
+- Optional AI analysis with professional insights
+
+## 🎯 ATS Scoring System
+
+### Scoring Components & Weights
+
+| Component            | Weight | Description                         |
+| -------------------- | ------ | ----------------------------------- |
+| **Keyword Match**    | 40%    | Exact and similar keyword detection |
+| **Keyword Density**  | 15%    | Balanced keyword distribution       |
+| **Personal Info**    | 15%    | Contact information completeness    |
+| **Skills Alignment** | 10%    | Technical skills matching           |
+| **Experience Match** | 10%    | Relevant experience assessment      |
+| **Education Match**  | 5%     | Qualifications alignment            |
+| **Formatting**       | 5%     | Resume structure quality            |
+
+### Score Interpretation
+
+- **90-100 (A)**: Exceptional - 95%+ chance of passing ATS
+- **80-89 (B)**: Excellent - 85%+ chance of passing ATS
+- **70-79 (C)**: Very Good - 75%+ chance of passing ATS
+- **60-69 (D)**: Good - 65%+ chance of passing ATS
+- **50-59 (F)**: Fair - 55%+ chance of passing ATS
+- **Below 50**: Poor - Significant improvements needed
+
+## 🛠️ Technology Stack
+
+### Core Technologies
+
+- **Python 3.11+**: Primary programming language
+- **Streamlit**: Web application framework
+- **spaCy**: Natural language processing
+- **NLTK**: Text processing and stemming
+
+### Libraries
+
+- **pdfplumber**: PDF text extraction
+- **python-docx**: DOCX file processing
+- **Pandas**: Data manipulation
+- **NumPy**: Numerical computations
+
+### Machine Learning
+
+- **Transformers**: For advanced NLP tasks
+- **Torch**: Deep learning framework
+- **Accelerate**: Model optimization
+- **Meta Llama 3.2-1B**: AI-powered resume analysis
+
+## 📁 Project Structure
+
+```
+ResumeMatchAI/
+├── streamlit_app/
+│   ├── app.py                 # Main Streamlit application
+│   ├── main.py               # Entry point
+│   ├── test_llm.py           # LLM functionality test
+│   ├── requirements.txt      # Python dependencies
+│   ├── pyproject.toml        # Project configuration
+│   ├── README.md            # This file
+│   └── utils/
+│       ├── __init__.py
+│       ├── ats_scoring.py        # ATS scoring algorithm
+│       ├── document_analyzer.py  # Direct document analysis
+│       ├── keywords_extraction.py # Keyword processing
+│       ├── llama_model.py        # AI-powered profile extraction
+│       ├── postgres_client.py    # PostgreSQL integration
+│       ├── profile_extractor.py  # Profile extraction utilities
+│       └── resume_keywords.py    # Personal info extraction
+├── .python-version           # Python version specification
+├── uv.lock                   # Dependency lock file
+└── .gitignore               # Git ignore rules
 ```
 
-Backend will be available at `http://localhost:8000`
+## 🔧 Configuration
 
-### Frontend Setup
+### Environment Variables
 
-1. Navigate to frontend directory:
+For basic ATS functionality, no environment variables are required. For AI-powered features:
 
-```bash
-cd frontend
+- **HUGGING_FACE_API**: Hugging Face API token for Llama model access (required for LLM Profile Extraction)
+- **POSTGRES_URI**: PostgreSQL connection string (required for saving profiles, default: `postgresql://localhost:5432/resumematchai`)
+
+Optional customization variables:
+
+- **MAX_FILE_SIZE**: Maximum resume file size (default: 100MB)
+- **WORD_LIMIT**: Job description word limit (default: 1000)
+- **SIMILARITY_THRESHOLD**: Keyword similarity threshold (default: 0.7)
+
+### Customization
+
+The scoring weights and thresholds can be adjusted in `utils/ats_scoring.py`:
+
+```python
+WEIGHTS = {
+    'keyword_match': 0.40,
+    'keyword_density': 0.15,
+    'personal_info': 0.15,
+    'skills_alignment': 0.10,
+    'experience_match': 0.10,
+    'education_match': 0.05,
+    'formatting': 0.05
+}
 ```
 
-2. Install dependencies:
+## 🤝 Contributing
 
-```bash
-npm install axios react-hook-form zod @hookform/resolvers lucide-react
-```
-
-3. Create `.env.local` file:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-4. Run development server:
-
-```bash
-npm run dev
-```
-
-Frontend will be available at `http://localhost:3000`
-
-## API Endpoints
-
-### Authentication
-
-- `POST /auth/signup` - Create new user account
-- `POST /auth/login` - Login and get JWT tokens
-- `POST /auth/refresh` - Refresh access token
-- `GET /auth/me` - Get current user profile
-- `POST /auth/logout` - Logout user
-
-### Document Upload
-
-- `POST /upload/document` - Upload a resume (requires auth)
-- `GET /upload/documents` - Get all user documents (requires auth)
-- `GET /upload/document/{id}` - Get specific document (requires auth)
-- `DELETE /upload/document/{id}` - Delete document (requires auth)
-
-## Usage
-
-1. **Sign Up**: Create a new account at `/signup`
-2. **Login**: Sign in at `/login`
-3. **Upload Resume**: Drag and drop or click to upload your resume on the dashboard
-4. **Manage Documents**: View, download, or delete your uploaded resumes
-
-## Security Features
-
-- Passwords hashed with bcrypt
-- JWT tokens with expiration
-- Automatic token refresh
-- Protected API endpoints
-- File type and size validation
-- Secure S3 storage with presigned URLs
-
-## Development
-
-### Running Tests
-
-```bash
-# Backend
-cd backend
-pytest
-
-# Frontend
-cd frontend
-npm test
-```
-
-### Code Formatting
-
-```bash
-# Backend
-black .
-isort .
-
-# Frontend
-npm run lint
-```
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Contributing
+We welcome contributions! Please follow these steps:
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes and commit: `git commit -m 'Add amazing feature'`
+4. Push to the branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
 
-## Support
+### Development Setup
 
-For issues and questions, please open an issue on GitHub.
+```bash
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run tests
+pytest
+
+# Format code
+black .
+isort .
+```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **spaCy** for powerful NLP capabilities
+- **Streamlit** for the amazing web app framework
+- **NLTK** for text processing utilities
+- Open source community for inspiration and tools
+
+## 📞 Support
+
+If you have questions or need help:
+
+- **Issues**: [GitHub Issues](https://github.com/yourusername/ResumeMatchAI/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/ResumeMatchAI/discussions)
+- **Email**: support@resumematchai.com
+
+---
+
+<div align="center">
+  <p><strong>Made with ❤️ for job seekers and recruiters</strong></p>
+  <p>
+    <a href="#resume">Resume</a> •
+    <a href="#ats-scoring-system">ATS Scoring</a> •
+    <a href="#contributing">Contributing</a> •
+    <a href="#license">License</a>
+  </p>
+</div>
