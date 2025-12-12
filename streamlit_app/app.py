@@ -6,19 +6,28 @@ import pdfplumber
 import docx2txt
 
 from utils.keywords_extraction import get_keywords
-from utils.resume_keywords import get_personal_info, get_websites, get_job_info
+from utils.resume_keywords import get_personal_info, get_websites, get_job_info, get_comprehensive_job_info, get_comprehensive_resume_info
+from utils.ats_scoring import calculate_ats_score
 
 # Add streamlit_app directory to path for imports
 app_dir = os.path.dirname(os.path.abspath(__file__))
 if app_dir not in sys.path:
     sys.path.insert(0, app_dir)
 
+# Version information
+__version__ = "1.0.0"
+__author__ = "ResumeMatchAI Team"
+
 
 # Page configuration
 st.set_page_config(
-    page_title="ResumeMatchAI — ATS Resume Scanner",
-    page_icon="📄",
-    layout="wide"
+    page_title="ResumeMatchAI — Advanced ATS Resume Scanner",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+    menu_items={
+        'About': "ResumeMatchAI - Advanced ATS Resume Scanner with comprehensive scoring and personalized recommendations."
+    }
 )
 
 # Initialize session state
@@ -42,6 +51,12 @@ if 'websites' not in st.session_state:
     st.session_state.websites = None
 if 'job_info' not in st.session_state:
     st.session_state.job_info = None
+if 'comprehensive_job_info' not in st.session_state:
+    st.session_state.comprehensive_job_info = None
+if 'comprehensive_resume_info' not in st.session_state:
+    st.session_state.comprehensive_resume_info = None
+if 'ats_score' not in st.session_state:
+    st.session_state.ats_score = None
 
 def page_1_job_description():
     """PAGE 1: Job Description Input"""
@@ -150,15 +165,15 @@ def page_2_resume_upload():
 
     
 def page_3_keywords_extraction_and_results():
-    """PAGE 4: Display All Extracted Information"""
-    st.title("Resume ATS Scanner — Results")
-    st.subheader("Step 3 — All Extracted Information")
+    """PAGE 3: Display ATS Score and All Extracted Information"""
+    st.title("ResumeMatchAI — ATS Compatibility Results")
+    st.subheader("Step 3 — ATS Score & Analysis")
 
     # Back button
     if st.button("← Back", type="secondary"):
-        st.session_state.page = 3
+        st.session_state.page = 2
         st.rerun()
-    
+
     st.markdown("---")
 
     # Extract all information if not already extracted
@@ -179,8 +194,104 @@ def page_3_keywords_extraction_and_results():
             st.session_state.websites = get_websites(st.session_state.resume_text)
     
     if st.session_state.job_info is None:
-        with st.spinner("Extracting job information..."):
+        with st.spinner("Extracting basic job information..."):
             st.session_state.job_info = get_job_info(st.session_state.job_description)
+
+    if st.session_state.comprehensive_job_info is None:
+        with st.spinner("Extracting comprehensive job information..."):
+            st.session_state.comprehensive_job_info = get_comprehensive_job_info(st.session_state.job_description)
+
+    if st.session_state.comprehensive_resume_info is None:
+        with st.spinner("Extracting comprehensive resume information..."):
+            st.session_state.comprehensive_resume_info = get_comprehensive_resume_info(st.session_state.resume_text)
+
+    # Calculate ATS score if not already calculated
+    if st.session_state.ats_score is None:
+        with st.spinner("Calculating ATS compatibility score..."):
+            st.session_state.ats_score = calculate_ats_score(
+                st.session_state.resume_text,
+                st.session_state.jd_keywords,
+                st.session_state.comprehensive_resume_info,  # Use comprehensive resume info
+                st.session_state.comprehensive_job_info      # Use comprehensive job info
+            )
+
+    # Display ATS Score prominently at the top
+    ats_score = st.session_state.ats_score
+    st.markdown("## 🎯 ATS Compatibility Score")
+
+    # Main score display
+    col_score, col_grade, col_compat = st.columns([2, 1, 2])
+
+    with col_score:
+        score = ats_score['overall_score']
+        if score >= 80:
+            st.success(f"### {score:.1f}/100")
+        elif score >= 60:
+            st.warning(f"### {score:.1f}/100")
+        else:
+            st.error(f"### {score:.1f}/100")
+
+    with col_grade:
+        grade = ats_score['grade']
+        grade_colors = {'A': '🟢', 'B': '🟡', 'C': '🟠', 'D': '🔴', 'F': '🔴'}
+        st.markdown(f"### {grade_colors.get(grade, '⚪')} Grade {grade}")
+
+    with col_compat:
+        compatibility = ats_score['ats_compatibility']
+        st.info(f"**{compatibility}**")
+
+    # Score breakdown
+    st.markdown("### 📊 Score Breakdown")
+    components = ats_score['component_scores']
+
+    # Create a nice progress bar layout
+    cols = st.columns(2)
+    component_names = {
+        'keyword_match': 'Keyword Match (40%)',
+        'keyword_density': 'Keyword Density (15%)',
+        'personal_info': 'Personal Info (15%)',
+        'skills_alignment': 'Skills Alignment (10%)',
+        'experience_match': 'Experience Match (10%)',
+        'education_match': 'Education Match (5%)',
+        'formatting': 'Formatting (5%)'
+    }
+
+    for i, (component, score) in enumerate(components.items()):
+        with cols[i % 2]:
+            st.markdown(f"**{component_names[component]}**")
+            st.progress(score / 100)
+            st.caption(f"{score:.1f}/100")
+
+    # Recommendations
+    if ats_score['recommendations']:
+        st.markdown("### 💡 Recommendations to Improve Your Score")
+
+        # Group recommendations by priority
+        priority_groups = {
+            '🚨': 'Critical Issues',
+            '📈': 'High Priority',
+            '🔧': 'Medium Priority',
+            '💡': 'Low Priority',
+            '📊': 'Overall Assessment',
+            '✨': 'Fine Tuning',
+            '🎉': 'Excellent Performance'
+        }
+
+        current_group = None
+        for rec in ats_score['recommendations']:
+            priority_icon = rec.split()[0]
+            if priority_icon in priority_groups and priority_icon != current_group:
+                current_group = priority_icon
+                st.markdown(f"**{priority_groups[priority_icon]}**")
+
+            # Remove the priority icon from the display text
+            display_text = ' '.join(rec.split()[1:])
+            if priority_icon in ['🚨', '📈', '🔧', '💡']:
+                st.markdown(f"• {display_text}")
+            else:
+                st.info(display_text)
+
+    st.markdown("---")
 
     # Display all information in organized sections
     col1, col2 = st.columns(2)
@@ -308,7 +419,91 @@ def page_3_keywords_extraction_and_results():
             st.session_state.personal_info = None
             st.session_state.websites = None
             st.session_state.job_info = None
+            st.session_state.comprehensive_job_info = None
+            st.session_state.comprehensive_resume_info = None
+            st.session_state.ats_score = None
             st.rerun()
+
+    # Display Keyword Analysis Details
+    keyword_analysis = ats_score.get('keyword_analysis', {})
+    if keyword_analysis and keyword_analysis.get('categorized_matches'):
+        st.markdown("### 🔍 Keyword Category Analysis")
+        categorized = keyword_analysis['categorized_matches']
+
+        # Display category scores
+        cat_cols = st.columns(min(len(categorized), 3))
+        for i, (category, data) in enumerate(list(categorized.items())[:3]):
+            with cat_cols[i]:
+                score = data.get('score', 0)
+                st.metric(
+                    f"{category.replace('_', ' ').title()}",
+                    f"{score:.1f}%",
+                    help=f"Matching score for {category}"
+                )
+
+    # Display Comprehensive Analysis
+    st.markdown("---")
+    st.markdown("## 📊 Detailed Analysis")
+
+    # Get comprehensive information
+    job_comp = st.session_state.comprehensive_job_info or {}
+    resume_comp = st.session_state.comprehensive_resume_info or {}
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### 💼 Job Requirements Analysis")
+        if job_comp:
+            st.markdown(f"**Experience Level:** {job_comp.get('experience_level', 'Not specified')}")
+            st.markdown(f"**Work Type:** {job_comp.get('work_type', 'Not specified')}")
+            st.markdown(f"**Employment Type:** {job_comp.get('employment_type', 'Not specified')}")
+
+            if job_comp.get('salary_info'):
+                st.markdown(f"**Salary Info:** {job_comp['salary_info']}")
+
+            if job_comp.get('education_requirements'):
+                st.markdown(f"**Education:** {', '.join(job_comp['education_requirements'][:3])}")
+
+            if job_comp.get('benefits'):
+                st.markdown(f"**Benefits:** {', '.join(job_comp['benefits'][:3])}")
+
+            if job_comp.get('key_skills'):
+                st.markdown("**Key Skills Required:**")
+                st.write(", ".join(job_comp['key_skills'][:10]))
+        else:
+            st.info("Basic job information extracted only")
+
+    with col2:
+        st.markdown("### 📄 Resume Content Analysis")
+        if resume_comp:
+            personal = resume_comp.get('personal_info', {})
+            st.markdown(f"**Contact Completeness:** {ats_score.get('resume_analysis', {}).get('contact_completeness', 0):.0f}%")
+            st.markdown(f"**Experience Entries:** {len(resume_comp.get('work_experience', []))}")
+            st.markdown(f"**Education Entries:** {len(resume_comp.get('education', []))}")
+            st.markdown(f"**Certifications:** {len(resume_comp.get('certifications', []))}")
+            st.markdown(f"**Projects:** {len(resume_comp.get('projects', []))}")
+            st.markdown(f"**Skills Listed:** {len(resume_comp.get('skills', []))}")
+
+            if resume_comp.get('languages'):
+                st.markdown(f"**Languages:** {', '.join(resume_comp['languages'][:3])}")
+
+            sections = resume_comp.get('sections_found', [])
+            if sections:
+                st.markdown(f"**Sections Found:** {', '.join(sections)}")
+        else:
+            st.info("Basic resume information extracted only")
+
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        f"""
+        <div style='text-align: center; color: #666; padding: 10px;'>
+            <p><strong>ResumeMatchAI v{__version__}</strong> — Advanced ATS Resume Scanner</p>
+            <p>Made with ❤️ for job seekers and recruiters | Powered by AI & NLP</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # Main app logic
 def main():
