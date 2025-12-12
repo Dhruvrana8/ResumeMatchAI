@@ -14,6 +14,7 @@
 ### ✨ Key Features
 
 - **🔍 Advanced ATS Scoring**: Comprehensive scoring algorithm with 7 weighted factors
+- **🤖 AI-Powered Analysis**: Meta Llama 3.2-1B model for professional HR-level insights
 - **📊 Keyword Analysis**: Intelligent keyword matching with similarity detection
 - **👤 Enhanced Personal Info Extraction**: Accurate name, email, phone, and location detection
 - **🎯 Smart Recommendations**: Prioritized, actionable feedback for resume improvement
@@ -84,7 +85,17 @@ The system performs comprehensive analysis including:
 - **Experience Relevance**: Work experience analysis
 - **Formatting Quality**: Resume structure evaluation
 
-### 4. **Results & Recommendations**
+### 4. **AI-Powered LLM Analysis** (Optional)
+
+Get professional HR-level insights using Meta's Llama 3.2-1B model:
+
+- **Comprehensive Assessment**: Detailed match percentage and analysis
+- **Strengths & Weaknesses**: Professional evaluation of your candidacy
+- **Improvement Recommendations**: Specific, actionable advice
+- **Interview Preparation**: Guidance for next steps
+- **Salary Insights**: Negotiation recommendations
+
+### 5. **Results & Recommendations**
 
 Receive a detailed ATS compatibility report with:
 
@@ -92,6 +103,7 @@ Receive a detailed ATS compatibility report with:
 - Component breakdown with visual progress bars
 - Prioritized improvement recommendations
 - Pass rate predictions
+- Optional AI analysis with professional insights
 
 ## 🎯 ATS Scoring System
 
@@ -137,6 +149,7 @@ Receive a detailed ATS compatibility report with:
 - **Transformers**: For advanced NLP tasks
 - **Torch**: Deep learning framework
 - **Accelerate**: Model optimization
+- **Meta Llama 3.2-1B**: AI-powered resume analysis
 
 ## 📁 Project Structure
 
@@ -145,6 +158,7 @@ ResumeMatchAI/
 ├── streamlit_app/
 │   ├── app.py                 # Main Streamlit application
 │   ├── main.py               # Entry point
+│   ├── test_llm.py           # LLM functionality test
 │   ├── requirements.txt      # Python dependencies
 │   ├── pyproject.toml        # Project configuration
 │   ├── README.md            # This file
@@ -152,6 +166,7 @@ ResumeMatchAI/
 │       ├── __init__.py
 │       ├── ats_scoring.py    # ATS scoring algorithm
 │       ├── keywords_extraction.py  # Keyword processing
+│       ├── llama_model.py    # AI-powered analysis
 │       └── resume_keywords.py      # Personal info extraction
 ├── .python-version           # Python version specification
 ├── uv.lock                   # Dependency lock file
@@ -162,7 +177,11 @@ ResumeMatchAI/
 
 ### Environment Variables
 
-No environment variables are required for basic functionality. However, you can customize:
+For basic ATS functionality, no environment variables are required. For AI-powered analysis:
+
+- **HUGGING_FACE_API**: Hugging Face API token for Llama model access (required for LLM Analysis)
+
+Optional customization variables:
 
 - **MAX_FILE_SIZE**: Maximum resume file size (default: 100MB)
 - **WORD_LIMIT**: Job description word limit (default: 1000)

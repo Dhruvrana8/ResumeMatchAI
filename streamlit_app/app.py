@@ -8,6 +8,7 @@ import docx2txt
 from utils.keywords_extraction import get_keywords
 from utils.resume_keywords import get_personal_info, get_websites, get_job_info, get_comprehensive_job_info, get_comprehensive_resume_info
 from utils.ats_scoring import calculate_ats_score
+from utils.llama_model import analyze_resume_and_job_description
 
 # Add streamlit_app directory to path for imports
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -57,6 +58,8 @@ if 'comprehensive_resume_info' not in st.session_state:
     st.session_state.comprehensive_resume_info = None
 if 'ats_score' not in st.session_state:
     st.session_state.ats_score = None
+if 'llm_analysis' not in st.session_state:
+    st.session_state.llm_analysis = None
 
 def page_1_job_description():
     """PAGE 1: Job Description Input"""
@@ -407,6 +410,11 @@ def page_3_keywords_extraction_and_results():
 
     # Action buttons
     col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("🤖 AI Analysis", type="secondary", use_container_width=True):
+            st.session_state.page = 4
+            st.rerun()
+
     with col2:
         if st.button("🔄 Start Over", type="primary", use_container_width=True):
             # Reset session state
@@ -422,6 +430,7 @@ def page_3_keywords_extraction_and_results():
             st.session_state.comprehensive_job_info = None
             st.session_state.comprehensive_resume_info = None
             st.session_state.ats_score = None
+            st.session_state.llm_analysis = None
             st.rerun()
 
     # Display Keyword Analysis Details
@@ -505,6 +514,154 @@ def page_3_keywords_extraction_and_results():
         unsafe_allow_html=True
     )
 
+def page_4_llm_analysis():
+    """PAGE 4: LLM Analysis"""
+    st.title("ResumeMatchAI — LLM Analysis")
+    st.subheader("Step 4 — AI-Powered Comprehensive Analysis")
+
+    # Back button
+    if st.button("← Back", type="secondary"):
+        st.session_state.page = 3
+        st.rerun()
+
+    st.markdown("---")
+
+    # Check if we have the required data
+    if not st.session_state.resume_text or not st.session_state.job_description:
+        st.error("Resume and job description are required for LLM analysis. Please go back and complete the previous steps.")
+        return
+
+    st.markdown("""
+    ### 🤖 AI Analysis with Llama 3.2-1B
+
+    This advanced analysis uses Meta's Llama 3.2-1B model to provide:
+    - **Overall match assessment** with specific percentage
+    - **Detailed strengths and weaknesses** analysis
+    - **Actionable improvement recommendations**
+    - **Interview preparation guidance**
+    - **Salary negotiation insights**
+
+    The AI analyzes your resume against the job description to give you professional HR-level feedback.
+    """)
+
+    # Run Analysis Button
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🚀 Run AI Analysis", type="primary", use_container_width=True):
+            with st.spinner("🤖 AI is analyzing your resume and job description... This may take a few minutes."):
+                try:
+                    # Perform LLM analysis
+                    analysis = analyze_resume_and_job_description(
+                        st.session_state.resume_text,
+                        st.session_state.job_description
+                    )
+                    st.session_state.llm_analysis = analysis
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Analysis failed: {str(e)}")
+                    st.info("💡 **Troubleshooting:** Make sure you have set the HUGGING_FACE_API environment variable with your Hugging Face API token.")
+
+    # Display analysis results if available
+    if st.session_state.llm_analysis:
+        st.markdown("---")
+        st.markdown("## 📊 AI Analysis Results")
+
+        # Analysis content in a nice box
+        st.markdown("""
+        <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; border-left: 5px solid #1f77b4;'>
+        """, unsafe_allow_html=True)
+
+        # Display the analysis with proper formatting
+        analysis_text = st.session_state.llm_analysis
+
+        # Try to format numbered sections nicely
+        lines = analysis_text.split('\n')
+        formatted_lines = []
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Format numbered sections
+            if line.startswith(('1.', '2.', '3.', '4.', '5.', '6.')):
+                parts = line.split('.', 1)
+                if len(parts) == 2:
+                    number = parts[0]
+                    content = parts[1].strip()
+                    formatted_lines.append(f"**{number}. {content}**")
+                    continue
+
+            # Format bullet points
+            if line.startswith('- ') or line.startswith('• '):
+                formatted_lines.append(f"• {line[2:]}")
+                continue
+
+            # Format percentage lines
+            if '%' in line and any(char.isdigit() for char in line):
+                formatted_lines.append(f"**{line}**")
+                continue
+
+            formatted_lines.append(line)
+
+        # Display formatted analysis
+        for line in formatted_lines:
+            st.markdown(line)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Action buttons
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 1])
+
+        with col1:
+            if st.button("📋 Copy Analysis", use_container_width=True):
+                # Create a copyable text area
+                st.text_area(
+                    "Copy the analysis below:",
+                    value=st.session_state.llm_analysis,
+                    height=200,
+                    key="copy_analysis"
+                )
+                st.success("Analysis text is ready to copy!")
+
+        with col2:
+            if st.button("🔄 New Analysis", use_container_width=True):
+                st.session_state.llm_analysis = None
+                st.rerun()
+
+        with col3:
+            if st.button("🏠 Start Over", use_container_width=True):
+                # Reset all session state
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
+
+    # Information about the model
+    st.markdown("---")
+    st.markdown("""
+    ### 🧠 About the AI Model
+
+    **Model:** Meta Llama 3.2-1B  
+    **Purpose:** Advanced natural language understanding for resume-job matching  
+    **Analysis Type:** Comprehensive HR-level assessment  
+
+    *Note: This analysis provides AI-generated insights to supplement the ATS scoring. Always consider multiple factors in your job search.*
+    """)
+
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        f"""
+        <div style='text-align: center; color: #666; padding: 10px;'>
+            <p><strong>ResumeMatchAI v{__version__}</strong> — Advanced ATS Resume Scanner with AI Analysis</p>
+            <p>Made with ❤️ for job seekers and recruiters | Powered by AI & NLP</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+
 # Main app logic
 def main():
     if st.session_state.page == 1:
@@ -513,6 +670,8 @@ def main():
         page_2_resume_upload()
     elif st.session_state.page == 3:
         page_3_keywords_extraction_and_results()
+    elif st.session_state.page == 4:
+        page_4_llm_analysis()
     else:
         st.session_state.page = 1
         st.rerun()
