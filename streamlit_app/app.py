@@ -1,14 +1,19 @@
 import streamlit as st
 import sys
 import os
+import logging
 from io import BytesIO
 import pdfplumber
 import docx2txt
 
+# Set up logging
+logger = logging.getLogger(__name__)
+
 from utils.keywords_extraction import get_keywords
 from utils.resume_keywords import get_personal_info, get_websites, get_job_info, get_comprehensive_job_info, get_comprehensive_resume_info
 from utils.ats_scoring import calculate_ats_score
-from utils.llama_model import analyze_resume_and_job_description
+from utils.llama_model import extract_user_profile
+from utils.postgres_client import save_user_profile, test_connection
 
 # Add streamlit_app directory to path for imports
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -60,6 +65,8 @@ if 'ats_score' not in st.session_state:
     st.session_state.ats_score = None
 if 'llm_analysis' not in st.session_state:
     st.session_state.llm_analysis = None
+if 'profile_id' not in st.session_state:
+    st.session_state.profile_id = None
 
 def page_1_job_description():
     """PAGE 1: Job Description Input"""
@@ -431,6 +438,7 @@ def page_3_keywords_extraction_and_results():
             st.session_state.comprehensive_resume_info = None
             st.session_state.ats_score = None
             st.session_state.llm_analysis = None
+            st.session_state.profile_id = None
             st.rerun()
 
     # Display Keyword Analysis Details
@@ -527,107 +535,279 @@ def page_4_llm_analysis():
     st.markdown("---")
 
     # Check if we have the required data
-    if not st.session_state.resume_text or not st.session_state.job_description:
-        st.error("Resume and job description are required for LLM analysis. Please go back and complete the previous steps.")
+    if not st.session_state.resume_file or not st.session_state.job_description:
+        st.error("Resume file and job description are required for LLM analysis. Please go back and complete the previous steps.")
         return
 
     st.markdown("""
-    ### 🤖 AI Analysis with Llama 3.2-1B
+    ### 🤖 User Profile Extraction with Llama 3.2-1B
 
-    This advanced analysis uses Meta's Llama 3.2-1B model to provide:
-    - **Overall match assessment** with specific percentage
-    - **Detailed strengths and weaknesses** analysis
-    - **Actionable improvement recommendations**
-    - **Interview preparation guidance**
-    - **Salary negotiation insights**
+    This feature extracts structured user profile information from your resume using Meta's Llama 3.2-1B model:
+    - **Personal Information**: Name, email, phone, location, social links
+    - **Professional Summary**: Career objective or summary
+    - **Skills**: Technical and soft skills
+    - **Work Experience**: Job history with details
+    - **Education**: Academic qualifications
+    - **Certifications, Projects, Languages, Awards**
 
-    The AI analyzes your resume against the job description to give you professional HR-level feedback.
+    The extracted profile will be saved to PostgreSQL for future reference.
     """)
 
-    # Run Analysis Button
+    # PostgreSQL Connection Status
+    postgres_status = test_connection()
+    if not postgres_status:
+        st.warning("⚠️ **PostgreSQL Connection**: Not connected. Profile will be extracted but not saved. Set POSTGRES_URI environment variable to enable saving.")
+    
+    # Run Profile Extraction Button
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("🚀 Run AI Analysis", type="primary", use_container_width=True):
-            with st.spinner("🤖 AI is analyzing your resume and job description... This may take a few minutes."):
+        if st.button("🚀 Extract & Save Profile", type="primary", use_container_width=True):
+            with st.spinner("🤖 Extracting user profile from resume... This may take a few minutes."):
                 try:
-                    # Perform LLM analysis
-                    analysis = analyze_resume_and_job_description(
-                        st.session_state.resume_text,
-                        st.session_state.job_description
-                    )
-                    st.session_state.llm_analysis = analysis
+                    # Extract text from resume file
+                    import tempfile
+                    import os
+                    from io import BytesIO
+                    import pdfplumber
+                    import docx2txt
+
+                    # Determine file extension
+                    file_ext = os.path.splitext(st.session_state.resume_file.name)[1].lower()
+                    
+                    # Extract text from file
+                    resume_text_extracted = ""
+                    
+                    if file_ext == '.pdf':
+                        # Try OCR first if available, otherwise use regular extraction
+                        try:
+                            from utils.document_analyzer import DocumentAnalyzer
+                            analyzer = DocumentAnalyzer()
+                            
+                            # Save file temporarily for OCR
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                                tmp_file.write(st.session_state.resume_file.read())
+                                temp_path = tmp_file.name
+                            
+                            try:
+                                ocr_result = analyzer.analyze_document(temp_path, method="ocr")
+                                # Extract text from OCR result if successful
+                                if "OCR Analysis Not Available" not in ocr_result and "Error" not in ocr_result:
+                                    # Parse OCR result to extract text
+                                    if "Extracted Text Length:" in ocr_result:
+                                        # Extract the text portion from OCR result
+                                        parts = ocr_result.split("Full Text:")
+                                        if len(parts) > 1:
+                                            resume_text_extracted = parts[1].strip()
+                            finally:
+                                if os.path.exists(temp_path):
+                                    os.unlink(temp_path)
+                            
+                            # Reset file pointer
+                            st.session_state.resume_file.seek(0)
+                        except Exception as ocr_error:
+                            logger.warning(f"OCR failed, using regular extraction: {ocr_error}")
+                            # Fall back to regular PDF extraction
+                            pass
+                    
+                    # If OCR didn't work or for DOCX, use regular extraction
+                    if not resume_text_extracted:
+                        if file_ext == '.pdf':
+                            with pdfplumber.open(BytesIO(st.session_state.resume_file.read())) as pdf:
+                                page_texts = []
+                                for page in pdf.pages:
+                                    page_text = page.extract_text()
+                                    if page_text:
+                                        page_texts.append(page_text)
+                                resume_text_extracted = "\n".join(page_texts)
+                            st.session_state.resume_file.seek(0)
+                        elif file_ext == '.docx':
+                            resume_text_extracted = docx2txt.process(BytesIO(st.session_state.resume_file.read()))
+                            st.session_state.resume_file.seek(0)
+                        else:
+                            resume_text_extracted = st.session_state.resume_text or ""
+                    
+                    # Debug: Show extracted text info
+                    if resume_text_extracted:
+                        st.info(f"📄 Extracted {len(resume_text_extracted)} characters from resume")
+                        st.info(f"📝 Word count: {len(resume_text_extracted.split())} words")
+                    
+                    # Extract user profile using LLM
+                    if resume_text_extracted and len(resume_text_extracted.strip()) > 50:
+                        profile = extract_user_profile(resume_text_extracted)
+                        
+                        # Check if profile has actual data
+                        if "error" in profile:
+                            st.error(f"❌ Profile extraction error: {profile['error']}")
+                        elif not profile.get('personal_info', {}).get('email') and not profile.get('skills'):
+                            st.warning("⚠️ Profile extracted but appears to be empty. The LLM may not have parsed the resume correctly.")
+                            st.info("💡 **Tip**: Try a resume with clearer formatting or more standard structure.")
+                        
+                        # Save to PostgreSQL if connected
+                        profile_id = None
+                        if postgres_status:
+                            profile_id = save_user_profile(profile)
+                            if profile_id:
+                                st.success(f"✅ Profile saved to PostgreSQL with ID: {profile_id}")
+                            else:
+                                st.warning("⚠️ Profile extracted but failed to save to PostgreSQL")
+                        else:
+                            st.info("ℹ️ Profile extracted but not saved (PostgreSQL not connected)")
+                        
+                        # Store in session state
+                        st.session_state.llm_analysis = profile
+                        st.session_state.profile_id = profile_id
+                    elif not resume_text_extracted:
+                        st.error("❌ Error: Could not extract text from resume file.")
+                        st.info("💡 **Possible causes:**")
+                        st.info("• PDF is image-based (scanned) - needs OCR")
+                        st.info("• File is corrupted or password-protected")
+                        st.info("• Unsupported file format")
+                        st.session_state.llm_analysis = {"error": "Could not extract text from resume file"}
+                    else:
+                        st.error("❌ Error: Extracted text is too short (less than 50 characters).")
+                        st.info(f"📄 Only extracted {len(resume_text_extracted)} characters")
+                        st.info("💡 This usually means the PDF is image-based and needs OCR.")
+                        st.session_state.llm_analysis = {"error": "Extracted text too short"}
+                    
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Analysis failed: {str(e)}")
-                    st.info("💡 **Troubleshooting:** Make sure you have set the HUGGING_FACE_API environment variable with your Hugging Face API token.")
+                    st.error(f"Profile extraction failed: {str(e)}")
+                    if "HUGGING_FACE_API" in str(e):
+                        st.info("💡 **Setup Required:** Make sure you have set the HUGGING_FACE_API environment variable with your Hugging Face API token.")
+                    elif "PostgreSQL" in str(e) or "psycopg2" in str(e):
+                        st.info("💡 **PostgreSQL Setup:** Install psycopg2-binary and set POSTGRES_URI environment variable. Profile will still be extracted but not saved.")
+                    else:
+                        st.info("💡 **Note:** Check the setup guide for troubleshooting tips.")
 
-    # Display analysis results if available
+    # Display profile results if available
     if st.session_state.llm_analysis:
         st.markdown("---")
-        st.markdown("## 📊 AI Analysis Results")
-
-        # Analysis content in a nice box
-        st.markdown("""
-        <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; border-left: 5px solid #1f77b4;'>
-        """, unsafe_allow_html=True)
-
-        # Display the analysis with proper formatting
-        analysis_text = st.session_state.llm_analysis
-
-        # Try to format numbered sections nicely
-        lines = analysis_text.split('\n')
-        formatted_lines = []
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # Format numbered sections
-            if line.startswith(('1.', '2.', '3.', '4.', '5.', '6.')):
-                parts = line.split('.', 1)
-                if len(parts) == 2:
-                    number = parts[0]
-                    content = parts[1].strip()
-                    formatted_lines.append(f"**{number}. {content}**")
-                    continue
-
-            # Format bullet points
-            if line.startswith('- ') or line.startswith('• '):
-                formatted_lines.append(f"• {line[2:]}")
-                continue
-
-            # Format percentage lines
-            if '%' in line and any(char.isdigit() for char in line):
-                formatted_lines.append(f"**{line}**")
-                continue
-
-            formatted_lines.append(line)
-
-        # Display formatted analysis
-        for line in formatted_lines:
-            st.markdown(line)
-
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("## 📊 Extracted User Profile")
+        
+        profile = st.session_state.llm_analysis
+        
+        # Check if it's an error
+        if isinstance(profile, dict) and "error" in profile:
+            st.error(f"❌ {profile['error']}")
+        else:
+            # Display profile in structured format
+            import json
+            
+            # Personal Information
+            if "personal_info" in profile:
+                st.markdown("### 👤 Personal Information")
+                personal = profile["personal_info"]
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if personal.get("name"):
+                        st.markdown(f"**Name:** {personal['name']}")
+                    if personal.get("email"):
+                        st.markdown(f"**Email:** {personal['email']}")
+                    if personal.get("phone"):
+                        st.markdown(f"**Phone:** {personal['phone']}")
+                
+                with col2:
+                    if personal.get("location"):
+                        st.markdown(f"**Location:** {personal['location']}")
+                    if personal.get("linkedin"):
+                        st.markdown(f"**LinkedIn:** {personal['linkedin']}")
+                    if personal.get("github"):
+                        st.markdown(f"**GitHub:** {personal['github']}")
+            
+            # Summary
+            if profile.get("summary"):
+                st.markdown("### 📝 Professional Summary")
+                st.info(profile["summary"])
+            
+            # Skills
+            if profile.get("skills") and len(profile["skills"]) > 0:
+                st.markdown("### 🛠️ Skills")
+                skills_str = ", ".join(profile["skills"])
+                st.write(skills_str)
+            
+            # Experience
+            if profile.get("experience") and len(profile["experience"]) > 0:
+                st.markdown("### 💼 Work Experience")
+                for exp in profile["experience"]:
+                    with st.expander(f"{exp.get('title', 'N/A')} at {exp.get('company', 'N/A')}"):
+                        if exp.get("location"):
+                            st.write(f"📍 {exp['location']}")
+                        if exp.get("start_date") or exp.get("end_date"):
+                            dates = f"{exp.get('start_date', '')} - {exp.get('end_date', '')}"
+                            st.write(f"📅 {dates}")
+                        if exp.get("description"):
+                            st.write(exp["description"])
+            
+            # Education
+            if profile.get("education") and len(profile["education"]) > 0:
+                st.markdown("### 🎓 Education")
+                for edu in profile["education"]:
+                    with st.expander(f"{edu.get('degree', 'N/A')} - {edu.get('institution', 'N/A')}"):
+                        if edu.get("location"):
+                            st.write(f"📍 {edu['location']}")
+                        if edu.get("graduation_date"):
+                            st.write(f"📅 Graduated: {edu['graduation_date']}")
+                        if edu.get("gpa"):
+                            st.write(f"📊 GPA: {edu['gpa']}")
+            
+            # Certifications
+            if profile.get("certifications") and len(profile["certifications"]) > 0:
+                st.markdown("### 🏆 Certifications")
+                for cert in profile["certifications"]:
+                    st.write(f"• {cert}")
+            
+            # Projects
+            if profile.get("projects") and len(profile["projects"]) > 0:
+                st.markdown("### 🚀 Projects")
+                for proj in profile["projects"]:
+                    with st.expander(proj.get("name", "Project")):
+                        if proj.get("description"):
+                            st.write(proj["description"])
+                        if proj.get("technologies"):
+                            st.write(f"**Technologies:** {', '.join(proj['technologies'])}")
+            
+            # Languages
+            if profile.get("languages") and len(profile["languages"]) > 0:
+                st.markdown("### 🌐 Languages")
+                st.write(", ".join(profile["languages"]))
+            
+            # Awards
+            if profile.get("awards") and len(profile["awards"]) > 0:
+                st.markdown("### 🏅 Awards")
+                for award in profile["awards"]:
+                    st.write(f"• {award}")
+            
+            # Show PostgreSQL ID if saved
+            if st.session_state.get("profile_id"):
+                st.markdown("---")
+                st.success(f"✅ **Profile saved to PostgreSQL** with ID: `{st.session_state.profile_id}`")
+            
+            # Show raw JSON
+            with st.expander("📄 View Raw JSON"):
+                st.json(profile)
 
         # Action buttons
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 1, 1])
 
         with col1:
-            if st.button("📋 Copy Analysis", use_container_width=True):
+            if st.button("📋 Copy Profile JSON", use_container_width=True):
                 # Create a copyable text area
+                import json
+                profile_json = json.dumps(st.session_state.llm_analysis, indent=2)
                 st.text_area(
-                    "Copy the analysis below:",
-                    value=st.session_state.llm_analysis,
+                    "Copy the profile JSON below:",
+                    value=profile_json,
                     height=200,
-                    key="copy_analysis"
+                    key="copy_profile"
                 )
-                st.success("Analysis text is ready to copy!")
+                st.success("Profile JSON is ready to copy!")
 
         with col2:
-            if st.button("🔄 New Analysis", use_container_width=True):
+            if st.button("🔄 Extract New Profile", use_container_width=True):
                 st.session_state.llm_analysis = None
+                st.session_state.profile_id = None
                 st.rerun()
 
         with col3:

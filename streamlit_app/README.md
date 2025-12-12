@@ -15,6 +15,7 @@
 
 - **🔍 Advanced ATS Scoring**: Comprehensive scoring algorithm with 7 weighted factors
 - **🤖 AI-Powered Analysis**: Meta Llama 3.2-1B model for professional HR-level insights
+- **📄 Direct Document Analysis**: Optional OCR-based file processing (experimental)
 - **📊 Keyword Analysis**: Intelligent keyword matching with similarity detection
 - **👤 Enhanced Personal Info Extraction**: Accurate name, email, phone, and location detection
 - **🎯 Smart Recommendations**: Prioritized, actionable feedback for resume improvement
@@ -85,15 +86,14 @@ The system performs comprehensive analysis including:
 - **Experience Relevance**: Work experience analysis
 - **Formatting Quality**: Resume structure evaluation
 
-### 4. **AI-Powered LLM Analysis** (Optional)
+### 4. **AI-Powered Profile Extraction** (Optional)
 
-Get professional HR-level insights using Meta's Llama 3.2-1B model:
+Extract structured user profile from your resume using Meta's Llama 3.2-1B model:
 
-- **Comprehensive Assessment**: Detailed match percentage and analysis
-- **Strengths & Weaknesses**: Professional evaluation of your candidacy
-- **Improvement Recommendations**: Specific, actionable advice
-- **Interview Preparation**: Guidance for next steps
-- **Salary Insights**: Negotiation recommendations
+- **Direct File Processing**: Analyzes your resume file with OCR-enhanced extraction
+- **Structured Data Extraction**: Personal info, skills, experience, education, certifications, projects
+- **PostgreSQL Storage**: Automatically saves extracted profiles to PostgreSQL
+- **JSON Format**: Clean, structured data ready for integration
 
 ### 5. **Results & Recommendations**
 
@@ -164,10 +164,13 @@ ResumeMatchAI/
 │   ├── README.md            # This file
 │   └── utils/
 │       ├── __init__.py
-│       ├── ats_scoring.py    # ATS scoring algorithm
-│       ├── keywords_extraction.py  # Keyword processing
-│       ├── llama_model.py    # AI-powered analysis
-│       └── resume_keywords.py      # Personal info extraction
+│       ├── ats_scoring.py        # ATS scoring algorithm
+│       ├── document_analyzer.py  # Direct document analysis
+│       ├── keywords_extraction.py # Keyword processing
+│       ├── llama_model.py        # AI-powered profile extraction
+│       ├── postgres_client.py    # PostgreSQL integration
+│       ├── profile_extractor.py  # Profile extraction utilities
+│       └── resume_keywords.py    # Personal info extraction
 ├── .python-version           # Python version specification
 ├── uv.lock                   # Dependency lock file
 └── .gitignore               # Git ignore rules
@@ -177,9 +180,10 @@ ResumeMatchAI/
 
 ### Environment Variables
 
-For basic ATS functionality, no environment variables are required. For AI-powered analysis:
+For basic ATS functionality, no environment variables are required. For AI-powered features:
 
-- **HUGGING_FACE_API**: Hugging Face API token for Llama model access (required for LLM Analysis)
+- **HUGGING_FACE_API**: Hugging Face API token for Llama model access (required for LLM Profile Extraction)
+- **POSTGRES_URI**: PostgreSQL connection string (required for saving profiles, default: `postgresql://localhost:5432/resumematchai`)
 
 Optional customization variables:
 

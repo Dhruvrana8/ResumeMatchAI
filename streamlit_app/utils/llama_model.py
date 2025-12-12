@@ -1,93 +1,189 @@
 import os
 import logging
+import torch
+import torch.backends.mps
+import re
+import json
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Model configuration
-model_id = "meta-llama/Llama-3.2-1B"
+model_id = "meta-llama/Llama-3.2-3B-Instruct"
 HUGGING_FACE_API = os.environ.get("HUGGING_FACE_API", None)
 
-# Global variable to store the pipeline (lazy loading)
 _pipe = None
+
+# Device setup
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
 
 def get_llama_pipeline():
     """Get or create the Llama pipeline with lazy loading"""
     global _pipe
+
     if _pipe is None:
         try:
-            # Import here to handle cases where torch/transformers aren't available
-            import torch
             from transformers import pipeline
 
             logger.info(f"Loading Llama model: {model_id}")
 
-            # Try different configurations for better compatibility
+            # dtype fix for MPS/CPU models (FP16 breaks output)
+            dtype = torch.float16 if device.type == "cuda" else torch.float32
+
             try:
                 _pipe = pipeline(
                     "text-generation",
                     model=model_id,
-                    torch_dtype=torch.float16,  # Use float16 instead of bfloat16 for better compatibility
+                    torch_dtype=dtype,
                     device_map="auto",
                     token=HUGGING_FACE_API,
-                    model_kwargs={"load_in_8bit": True}  # Use 8-bit quantization to save memory
+                    model_kwargs={"load_in_8bit": device.type == "cuda"}
                 )
             except Exception as e1:
-                logger.warning(f"Failed to load with quantization, trying standard config: {str(e1)}")
-                try:
-                    _pipe = pipeline(
-                        "text-generation",
-                        model=model_id,
-                        torch_dtype=torch.float16,
-                        device_map="auto",
-                        token=HUGGING_FACE_API
-                    )
-                except Exception as e2:
-                    logger.warning(f"Failed with float16, trying float32: {str(e2)}")
-                    _pipe = pipeline(
-                        "text-generation",
-                        model=model_id,
-                        torch_dtype=torch.float32,  # Fallback to float32
-                        device_map="cpu",  # Force CPU if GPU issues
-                        token=HUGGING_FACE_API
-                    )
+                logger.warning(f"Primary load failed: {e1}")
+                _pipe = pipeline(
+                    "text-generation",
+                    model=model_id,
+                    torch_dtype=torch.float32,
+                    device_map="cpu",
+                    token=HUGGING_FACE_API
+                )
 
-            logger.info("Llama model loaded successfully")
-        except ImportError as e:
-            logger.error(f"Missing required dependencies: {str(e)}")
-            raise ImportError(f"Required packages not installed. Please install: pip install torch transformers accelerate bitsandbytes")
         except Exception as e:
-            logger.error(f"Failed to load Llama model: {str(e)}")
-            raise ValueError(f"Could not load Llama model. Please check your Hugging Face API token. Error: {str(e)}")
+            logger.error(f"Pipeline load error: {e}")
+            raise RuntimeError("Unable to load LLAMA model.")
+
     return _pipe
 
-def analyze_resume_and_job_description(resume_text, job_description, max_new_tokens=512):
-    """
-    Use Llama model to analyze resume against job description
 
-    Args:
-        resume_text (str): The full resume text
-        job_description (str): The full job description text
-        max_new_tokens (int): Maximum number of new tokens to generate
+# --- JSON FIXERS --------------------------------------------------------------
 
-    Returns:
-        str: LLM analysis result
-    """
+def fix_json_str(s: str):
+    """Clean JSON to prevent model formatting issues"""
+    s = s.strip()
+    s = s.replace("“", "\"").replace("”", "\"")
+    s = re.sub(r',\s*([\]}])', r'\1', s)
+    s = s.replace("'", "\"")
+    return s
 
-    if not resume_text.strip() or not job_description.strip():
-        return "Error: Both resume and job description are required for analysis."
 
-    # Limit input length to prevent issues (Llama 3.2-1B has token limits)
-    max_input_length = 2000  # Conservative limit
-    resume_text = resume_text[:max_input_length] if len(resume_text) > max_input_length else resume_text
-    job_description = job_description[:max_input_length] if len(job_description) > max_input_length else job_description
+def extract_json(text: str):
+    """Extract the first valid JSON object from text"""
+    # Capture deeply nested JSON
+    pattern = r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}'
+    match = re.search(pattern, text, re.DOTALL)
+
+    if not match:
+        raise ValueError("JSON not found in output.")
+
+    cleaned = fix_json_str(match.group(0))
+    return json.loads(cleaned)
+
+
+# --- PROFILE EXTRACTION -------------------------------------------------------
+
+def extract_user_profile(resume_text: str, max_new_tokens: int = 512) -> dict:
+    if not resume_text.strip():
+        return {"error": "Resume text is required"}
+
+    resume_text = resume_text[:2000]
 
     try:
         pipe = get_llama_pipeline()
 
-        # Create a more focused prompt to reduce token usage
-        prompt = f"""You are an HR expert. Analyze this resume against the job description.
+        prompt = f"""
+Extract structured data from this resume. 
+Return ONLY valid JSON. No explanation.
+
+Resume:
+{resume_text}
+
+JSON Format:
+{{
+  "name": "",
+  "email": "",
+  "phone": "",
+  "location": "",
+  "links": {{
+    "linkedin": "",
+    "github": "",
+    "website": ""
+  }},
+  "summary": "",
+  "skills": [],
+  "experience": [],
+  "education": [],
+  "projects": []
+}}
+
+Return JSON only:
+"""
+
+        logger.info("Extracting user profile...")
+
+        outputs = pipe(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            temperature=0.1,
+            do_sample=False,
+            pad_token_id=pipe.tokenizer.eos_token_id,
+            num_return_sequences=1,
+            return_full_text=False
+        )
+
+        generated = outputs[0].get("generated_text", "")
+
+        return extract_json(generated)
+
+    except Exception as e:
+        logger.error(f"LLM JSON extraction failed: {e}")
+        return fallback_profile_extraction(resume_text)
+
+
+# --- FALLBACK -----------------------------------------------------------------
+
+def fallback_profile_extraction(resume_text: str) -> dict:
+    """Basic fallback when LLM fails"""
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    phone_pattern = r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'
+
+    emails = re.findall(email_pattern, resume_text)
+    phones = re.findall(phone_pattern, resume_text)
+
+    return {
+        "name": "",
+        "email": emails[0] if emails else "",
+        "phone": phones[0] if phones else "",
+        "location": "",
+        "links": {"linkedin": "", "github": "", "website": ""},
+        "summary": "",
+        "skills": [],
+        "experience": [],
+        "education": [],
+        "projects": []
+    }
+
+
+# --- RESUME ANALYSIS ----------------------------------------------------------
+
+def analyze_resume_and_job_description(resume_text, job_description, max_new_tokens=256):
+    if not resume_text.strip() or not job_description.strip():
+        return "Error: resume and job description are required."
+
+    resume_text = resume_text[:2000]
+    job_description = job_description[:2000]
+
+    try:
+        pipe = get_llama_pipeline()
+
+        prompt = f"""
+You are an HR expert. Analyze this resume against the job description.
 
 RESUME:
 {resume_text}
@@ -95,77 +191,40 @@ RESUME:
 JOB DESCRIPTION:
 {job_description}
 
-Provide analysis with:
-1. Match percentage (0-100%)
-2. Key strengths
-3. Weaknesses/gaps
-4. Recommendations
+Return analysis with:
+- Match % (0-100)
+- Strengths
+- Weaknesses
+- Recommendations
+"""
 
-Be concise and professional."""
+        outputs = pipe(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            temperature=0.3,
+            do_sample=True,
+            top_p=0.9,
+            top_k=50,
+            repetition_penalty=1.1,
+            pad_token_id=pipe.tokenizer.eos_token_id,
+            return_full_text=False,
+        )
 
-        logger.info("Generating LLM analysis...")
-
-        # Try multiple generation strategies for robustness
-        try:
-            # First try with conservative parameters
-            outputs = pipe(
-                prompt,
-                max_new_tokens=min(max_new_tokens, 256),  # Reduce token limit
-                temperature=0.3,  # Lower temperature for more stable generation
-                do_sample=True,
-                top_p=0.9,  # Add top_p for better sampling
-                top_k=50,   # Add top_k for better sampling
-                repetition_penalty=1.1,  # Prevent repetition
-                pad_token_id=pipe.tokenizer.eos_token_id,
-                num_return_sequences=1,
-                return_full_text=False  # Don't return the input prompt
-            )
-        except Exception as gen_error:
-            logger.warning(f"Primary generation failed, trying fallback: {str(gen_error)}")
-            # Fallback with even more conservative parameters
-            try:
-                outputs = pipe(
-                    prompt,
-                    max_new_tokens=128,  # Very conservative token limit
-                    temperature=0.1,  # Very low temperature
-                    do_sample=False,  # Greedy decoding for stability
-                    pad_token_id=pipe.tokenizer.eos_token_id,
-                    num_return_sequences=1,
-                    return_full_text=False
-                )
-            except Exception as fallback_error:
-                logger.error(f"Fallback generation also failed: {str(fallback_error)}")
-                return f"Error: Model generation failed even with conservative parameters. This might be due to model/tokenizer compatibility issues. Original error: {str(gen_error)}"
-
-        # Extract the generated text
-        if isinstance(outputs, list) and len(outputs) > 0:
-            generated_text = outputs[0].get('generated_text', '')
-        else:
-            generated_text = str(outputs)
-
-        # Clean up the analysis text
-        analysis = generated_text.strip()
-
-        # Remove any common artifacts
-        if analysis.startswith(prompt):
-            analysis = analysis[len(prompt):].strip()
-
-        if not analysis:
-            return "Error: Model generated empty response. This might indicate input processing issues."
-
-        logger.info("LLM analysis completed successfully")
-        return analysis
+        return outputs[0]["generated_text"].strip()
 
     except Exception as e:
-        error_msg = f"Error during LLM analysis: {str(e)}"
-        logger.error(error_msg)
+        logger.error(f"Analysis failed: {e}")
+        return "Error analyzing resume."
 
-        # Provide more helpful error messages
-        if "probability tensor" in str(e).lower():
-            return "Error: Probability tensor issue detected. This usually indicates model/tokenizer compatibility problems. Try updating your transformers and torch versions."
-        elif "out of memory" in str(e).lower():
-            return "Error: Out of memory. Try closing other applications or using a smaller model."
-        elif "token" in str(e).lower():
-            return "Error: Tokenization issue. Your input might be too complex for the model."
 
-        return error_msg
+# --- Placeholder --------------------------------------------------------------
+
+def analyze_resume_file(file_path, job_description, max_new_tokens=256):
+    return "PDF/DOCX analysis not implemented yet."
+
+
+# Multimodal models (future)
+MULTIMODAL_MODELS = {
+    "llava": {"model_id": "llava-hf/llava-1.5-7b-hf"},
+    "gpt4v": {"model_id": "gpt-4-vision-preview"}
+}
