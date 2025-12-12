@@ -4,6 +4,8 @@ import torch
 import torch.backends.mps
 import re
 import json
+from dotenv import load_dotenv
+load_dotenv()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +25,7 @@ elif torch.backends.mps.is_available():
 else:
     device = torch.device("cpu")
 
+
 def get_llama_pipeline():
     """Get or create the Llama pipeline with lazy loading"""
     global _pipe
@@ -36,7 +39,9 @@ def get_llama_pipeline():
             # dtype fix for MPS/CPU models (FP16 breaks output)
             dtype = torch.float16 if device.type == "cuda" else torch.float32
 
+            # Try loading from local cache first (offline mode)
             try:
+                logger.info("Attempting to load model from local cache...")
                 _pipe = pipeline(
                     "text-generation",
                     model=model_id,
@@ -45,19 +50,59 @@ def get_llama_pipeline():
                     token=HUGGING_FACE_API,
                     model_kwargs={"load_in_8bit": device.type == "cuda"}
                 )
+                logger.info("Successfully loaded model from local cache")
             except Exception as e1:
-                logger.warning(f"Primary load failed: {e1}")
-                _pipe = pipeline(
-                    "text-generation",
-                    model=model_id,
-                    torch_dtype=torch.float32,
-                    device_map="cpu",
-                    token=HUGGING_FACE_API
-                )
+                logger.warning(f"Local cache load failed: {e1}")
+                logger.info(
+                    "Attempting to download model from Hugging Face...")
+
+                # Check if token is set
+                if not HUGGING_FACE_API:
+                    logger.error(
+                        "HUGGING_FACE_API token not set. Please set it as an environment variable.")
+                    raise RuntimeError(
+                        "Hugging Face token required. Please:\n"
+                        "1. Get a token from https://huggingface.co/settings/tokens\n"
+                        "2. Set environment variable: export HUGGING_FACE_API='your_token_here'\n"
+                        "3. Accept the model license at https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct"
+                    )
+
+                try:
+                    # Try downloading with token
+                    _pipe = pipeline(
+                        "text-generation",
+                        model=model_id,
+                        torch_dtype=dtype,
+                        device_map="auto",
+                        token=HUGGING_FACE_API,
+                        model_kwargs={"load_in_8bit": device.type == "cuda"}
+                    )
+                    logger.info("Successfully downloaded and loaded model")
+                except Exception as e2:
+                    logger.warning(f"Primary load failed: {e2}")
+                    logger.info("Attempting CPU fallback...")
+                    # Fallback to CPU
+                    _pipe = pipeline(
+                        "text-generation",
+                        model=model_id,
+                        torch_dtype=torch.float32,
+                        device_map="cpu",
+                        token=HUGGING_FACE_API
+                    )
+                    logger.info("Successfully loaded model on CPU")
 
         except Exception as e:
             logger.error(f"Pipeline load error: {e}")
-            raise RuntimeError("Unable to load LLAMA model.")
+            error_msg = (
+                f"Unable to load LLAMA model. Error: {str(e)}\n\n"
+                "Troubleshooting steps:\n"
+                "1. Check your internet connection\n"
+                "2. Ensure HUGGING_FACE_API environment variable is set\n"
+                "3. Accept the model license at https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct\n"
+                "4. Try downloading the model manually first\n"
+                "5. Check Hugging Face status: https://status.huggingface.co/"
+            )
+            raise RuntimeError(error_msg)
 
     return _pipe
 
@@ -92,7 +137,7 @@ def extract_user_profile(resume_text: str, max_new_tokens: int = 512) -> dict:
     if not resume_text.strip():
         return {"error": "Resume text is required"}
 
-    resume_text = resume_text[:2000]
+    resume_text = resume_text[:30000]
 
     try:
         pipe = get_llama_pipeline()
