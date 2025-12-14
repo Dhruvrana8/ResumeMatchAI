@@ -1,1259 +1,226 @@
 import streamlit as st
-import sys
 import os
+import sys
 import logging
-from io import BytesIO
 import pdfplumber
 import docx2txt
 
-# Set up logging
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from utils.keywords_extraction import get_keywords
-from utils.resume_keywords import get_personal_info, get_websites, get_job_info, get_comprehensive_job_info, get_comprehensive_resume_info
-from utils.ats_scoring import calculate_ats_score
-from utils.llama_model import extract_user_profile
-from utils.postgres_client import save_user_profile, test_connection
-from utils.web_scraper import scrape_all_profiles
-from utils.job_recommendations import get_job_recommendations
-
-# Add streamlit_app directory to path for imports
+# Add module path
 app_dir = os.path.dirname(os.path.abspath(__file__))
-if app_dir not in sys.path:
-    sys.path.insert(0, app_dir)
+sys.path.append(app_dir)
 
-# Version information
-__version__ = "1.0.0"
-__author__ = "ResumeMatchAI Team"
+# Import Utilities
+from utils.keywords_extraction import get_keywords
+from utils.resume_keywords import get_comprehensive_resume_info, get_comprehensive_job_info
+from utils.ats_scoring import calculate_ats_score
+from utils.ats_engine import process_ats_request
 
+__version__ = "2.1.0"
 
-# Page configuration
 st.set_page_config(
-    page_title="ResumeMatchAI — Advanced ATS Resume Scanner",
-    page_icon="🎯",
+    page_title="Resume ATS Scanner",
+    page_icon="📄",
     layout="wide",
-    initial_sidebar_state="collapsed",
-    menu_items={
-        'About': "ResumeMatchAI - Advanced ATS Resume Scanner with comprehensive scoring and personalized recommendations."
-    }
+    initial_sidebar_state="collapsed"
 )
 
-# Initialize session state
-if 'page' not in st.session_state:
-    st.session_state.page = 1
-if 'job_description' not in st.session_state:
-    st.session_state.job_description = ""
-if 'resume_file' not in st.session_state:
-    st.session_state.resume_file = None
+# Initialize Session State
+if 'ats_result' not in st.session_state:
+    st.session_state.ats_result = None
 if 'resume_text' not in st.session_state:
-    st.session_state.resume_text = None
-if 'jd_keywords' not in st.session_state:
-    st.session_state.jd_keywords = None
-if 'resume_keywords' not in st.session_state:
-    st.session_state.resume_keywords = None
-if 'results' not in st.session_state:
-    st.session_state.results = None
-if 'personal_info' not in st.session_state:
-    st.session_state.personal_info = None
-if 'websites' not in st.session_state:
-    st.session_state.websites = None
-if 'job_info' not in st.session_state:
-    st.session_state.job_info = None
-if 'comprehensive_job_info' not in st.session_state:
-    st.session_state.comprehensive_job_info = None
-if 'comprehensive_resume_info' not in st.session_state:
-    st.session_state.comprehensive_resume_info = None
-if 'ats_score' not in st.session_state:
-    st.session_state.ats_score = None
-if 'llm_analysis' not in st.session_state:
-    st.session_state.llm_analysis = None
-if 'profile_id' not in st.session_state:
-    st.session_state.profile_id = None
-if 'web_scraped_data' not in st.session_state:
-    st.session_state.web_scraped_data = None
-if 'job_recommendations' not in st.session_state:
-    st.session_state.job_recommendations = None
+    st.session_state.resume_text = ""
 
-def page_1_job_description():
-    """PAGE 1: Job Description Input"""
-    st.title("ResumeMatchAI — ATS Resume Scanner")
-    st.subheader("Step 1 — Paste the Job Description")
-    
-    st.markdown("---")
-    
-    # Large text area for job description
-    job_desc = st.text_area(
-        "Job Description",
-        value=st.session_state.job_description,
-        height=400,
-        placeholder="Paste the complete job description here...",
-        help="Copy and paste the full job description including requirements, skills, and qualifications."
-    )
-    
-    st.session_state.job_description = job_desc
-    
-    # Word count display and validation
-    word_count = len(job_desc.split()) if job_desc.strip() else 0
-    max_words = 1000
-    
-    # Display word count with color coding
-    if word_count > max_words:
-        st.error(f"Word count: {word_count:,} / {max_words:,} words (exceeds limit by {word_count - max_words:,} words)")
-    elif word_count > max_words * 0.9:  # Warning at 90%
-        st.warning(f"Word count: {word_count:,} / {max_words:,} words")
-    else:
-        st.info(f"Word count: {word_count:,} / {max_words:,} words")
-    
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("Next →", type="primary", use_container_width=True):
-            if not job_desc.strip():
-                st.error("Please enter a job description before proceeding.")
-            elif word_count > max_words:
-                st.error(f"Job description exceeds the maximum limit of {max_words:,} words. Please shorten it by {word_count - max_words:,} words.")
-            else:
-                st.session_state.page = 2
-                st.rerun()
+def extract_text_from_file(uploaded_file):
+    try:
+        text = ""
+        if uploaded_file.type == "application/pdf":
+            with pdfplumber.open(uploaded_file) as pdf:
+                for page in pdf.pages:
+                    text += page.extract_text() or ""
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            text = docx2txt.process(uploaded_file)
+        return text
+    except Exception as e:
+        logger.error(f"Error extracting text: {e}")
+        return None
 
-def page_2_resume_upload():
-    """PAGE 2: Resume Upload"""
-    st.title("Upload Your Resume")
-    
-    # Back button
-    if st.button("← Back", type="secondary"):
-        st.session_state.page = 1
-        st.rerun()
-    
-    st.markdown("---")
-    
-    # File uploader
-    uploaded_file = st.file_uploader(
-        "Choose a resume file",
-        type=['pdf', 'docx'],
-        help="Upload your resume in PDF or DOCX format (max 100MB)"
-    )
-    
-    if uploaded_file is not None:
-        # Check file size (100MB = 100 * 1024 * 1024 bytes)
-        max_size = 100 * 1024 * 1024
-        if uploaded_file.size > max_size:
-            st.error(f"File size ({uploaded_file.size / (1024*1024):.2f} MB) exceeds maximum allowed size (100 MB)")
-        else:
-            st.session_state.resume_file = uploaded_file
-            # Need to Read the Resume File
-            if uploaded_file.type == "application/pdf":
-                # Use pdfplumber for better text extraction
-                with pdfplumber.open(BytesIO(uploaded_file.read())) as pdf:
-                    # Preserve newlines by joining pages with newlines
-                    page_texts = []
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            page_texts.append(page_text)
-                    st.session_state.resume_text = "\n".join(page_texts)
-                uploaded_file.seek(0)  # Reset file pointer
-            elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                # Use docx2txt for better text extraction
-                text = docx2txt.process(BytesIO(uploaded_file.read()))
-                st.session_state.resume_text = text if text else ""
-                uploaded_file.seek(0)  # Reset file pointer
-            st.success(f"File uploaded: {uploaded_file.name} ({uploaded_file.size / 1024:.2f} KB)")
-    
-    st.markdown("---")
-    
-    # Run Keyword Extraction button
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        if st.button("Run Keyword Extraction", type="primary", use_container_width=True):
-            if st.session_state.job_description.strip() and st.session_state.resume_file is not None:
-                with st.spinner("Extracting keywords from job description and resume... This may take a moment."):
-                    try:
-                        st.session_state.page = 3
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"An error occurred: {str(e)}")
-                        st.exception(e)
-            else:
-                if not st.session_state.job_description.strip():
-                    st.error("Please provide a job description first.")
-                if st.session_state.resume_file is None:
-                    st.error("Please upload a resume file.")
-
-    
-def page_3_keywords_extraction_and_results():
-    """PAGE 3: Display ATS Score and All Extracted Information"""
-    st.title("ResumeMatchAI — ATS Compatibility Results")
-    st.subheader("Step 3 — ATS Score & Analysis")
-
-    # Back button
-    if st.button("← Back", type="secondary"):
-        st.session_state.page = 2
-        st.rerun()
-
-    st.markdown("---")
-
-    # Extract all information if not already extracted
-    if st.session_state.jd_keywords is None:
-        with st.spinner("Extracting keywords from job description..."):
-            st.session_state.jd_keywords = get_keywords(st.session_state.job_description)
-            
-    if st.session_state.resume_keywords is None:
-        with st.spinner("Extracting keywords from resume..."):
-            st.session_state.resume_keywords = get_keywords(st.session_state.resume_text)
-    
-    if st.session_state.personal_info is None:
-        with st.spinner("Extracting personal information..."):
-            st.session_state.personal_info = get_personal_info(st.session_state.resume_text)
-    
-    if st.session_state.websites is None:
-        with st.spinner("Extracting websites..."):
-            st.session_state.websites = get_websites(st.session_state.resume_text)
-    
-    if st.session_state.job_info is None:
-        with st.spinner("Extracting basic job information..."):
-            st.session_state.job_info = get_job_info(st.session_state.job_description)
-
-    if st.session_state.comprehensive_job_info is None:
-        with st.spinner("Extracting comprehensive job information..."):
-            st.session_state.comprehensive_job_info = get_comprehensive_job_info(st.session_state.job_description)
-
-    if st.session_state.comprehensive_resume_info is None:
-        with st.spinner("Extracting comprehensive resume information..."):
-            st.session_state.comprehensive_resume_info = get_comprehensive_resume_info(st.session_state.resume_text)
-
-    # Calculate ATS score if not already calculated
-    if st.session_state.ats_score is None:
-        with st.spinner("Calculating ATS compatibility score..."):
-            st.session_state.ats_score = calculate_ats_score(
-                st.session_state.resume_text,
-                st.session_state.jd_keywords,
-                st.session_state.comprehensive_resume_info,  # Use comprehensive resume info
-                st.session_state.comprehensive_job_info      # Use comprehensive job info
-            )
-
-    # Display ATS Score prominently at the top
-    ats_score = st.session_state.ats_score
-    st.markdown("## 🎯 ATS Compatibility Score")
-
-    # Main score display
-    col_score, col_grade, col_compat = st.columns([2, 1, 2])
-
-    with col_score:
-        score = ats_score['overall_score']
-        if score >= 80:
-            st.success(f"### {score:.1f}/100")
-        elif score >= 60:
-            st.warning(f"### {score:.1f}/100")
-        else:
-            st.error(f"### {score:.1f}/100")
-
-    with col_grade:
-        grade = ats_score['grade']
-        grade_colors = {'A': '🟢', 'B': '🟡', 'C': '🟠', 'D': '🔴', 'F': '🔴'}
-        st.markdown(f"### {grade_colors.get(grade, '⚪')} Grade {grade}")
-
-    with col_compat:
-        compatibility = ats_score['ats_compatibility']
-        st.info(f"**{compatibility}**")
-
-    # Score breakdown
-    st.markdown("### 📊 Score Breakdown")
-    components = ats_score['component_scores']
-
-    # Create a nice progress bar layout
-    cols = st.columns(2)
-    component_names = {
-        'keyword_match': 'Keyword Match (40%)',
-        'keyword_density': 'Keyword Density (15%)',
-        'personal_info': 'Personal Info (15%)',
-        'skills_alignment': 'Skills Alignment (10%)',
-        'experience_match': 'Experience Match (10%)',
-        'education_match': 'Education Match (5%)',
-        'formatting': 'Formatting (5%)'
-    }
-
-    for i, (component, score) in enumerate(components.items()):
-        with cols[i % 2]:
-            st.markdown(f"**{component_names[component]}**")
-            st.progress(score / 100)
-            st.caption(f"{score:.1f}/100")
-
-    # Recommendations
-    if ats_score['recommendations']:
-        st.markdown("### 💡 Recommendations to Improve Your Score")
-
-        # Group recommendations by priority
-        priority_groups = {
-            '🚨': 'Critical Issues',
-            '📈': 'High Priority',
-            '🔧': 'Medium Priority',
-            '💡': 'Low Priority',
-            '📊': 'Overall Assessment',
-            '✨': 'Fine Tuning',
-            '🎉': 'Excellent Performance'
+def main():
+    # --- Custom CSS for basic styling improvements ---
+    st.markdown("""
+        <style>
+        .stApp {
+            background-color: #f8f9fa;
         }
+        .main-header {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #1e293b;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        .sub-header {
+            font-size: 1.1rem;
+            color: #64748b;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 1rem;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-        current_group = None
-        for rec in ats_score['recommendations']:
-            priority_icon = rec.split()[0]
-            if priority_icon in priority_groups and priority_icon != current_group:
-                current_group = priority_icon
-                st.markdown(f"**{priority_groups[priority_icon]}**")
+    # --- Header & Hero ---
+    st.markdown('<div class="main-header">Resume ATS Scanner</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Optimize your resume with AI-powered ATS analysis</div>', unsafe_allow_html=True)
 
-            # Remove the priority icon from the display text
-            display_text = ' '.join(rec.split()[1:])
-            if priority_icon in ['🚨', '📈', '🔧', '💡']:
-                st.markdown(f"• {display_text}")
-            else:
-                st.info(display_text)
-
-    st.markdown("---")
-
-    # Display all information in organized sections
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("### 📋 Job Description Keywords")
-        if st.session_state.jd_keywords:
-            # Display keywords as tags
-            keywords_str = ", ".join(st.session_state.jd_keywords[:50])  # Show first 50
-            st.write(keywords_str)
-            if len(st.session_state.jd_keywords) > 50:
-                st.caption(f"... and {len(st.session_state.jd_keywords) - 50} more keywords")
-            st.caption(f"Total: {len(st.session_state.jd_keywords)} keywords")
-        else:
-            st.warning("No keywords extracted from job description.")
-
-    with col2:
-        st.markdown("### 📄 Resume Keywords")
-        if st.session_state.resume_keywords:
-            keywords_str = ", ".join(st.session_state.resume_keywords[:50])  # Show first 50
-            st.write(keywords_str)
-            if len(st.session_state.resume_keywords) > 50:
-                st.caption(f"... and {len(st.session_state.resume_keywords) - 50} more keywords")
-            st.caption(f"Total: {len(st.session_state.resume_keywords)} keywords")
-        else:
-            st.warning("No keywords extracted from resume.")
-
-    st.markdown("---")
-
-    # Job Information Section
-    st.markdown("### 💼 Job Information")
-    job_info = st.session_state.job_info
-    
-    if job_info:
-        job_col1, job_col2 = st.columns(2)
-        
-        with job_col1:
-            st.markdown("**Company Name:**")
-            st.write(job_info.get("company_name", "Not found") or "Not found")
-            
-            st.markdown("**Position:**")
-            st.write(job_info.get("position", "Not found") or "Not found")
-        
-        with job_col2:
-            st.markdown("**Location:**")
-            st.write(job_info.get("location", "Not found") or "Not found")
-            
-            st.markdown("**Website:**")
-            website = job_info.get("website", None)
-            if website:
-                st.write(website)
-            else:
-                st.write("Not found")
-    else:
-        st.warning("No job information could be extracted from the job description.")
-
-    st.markdown("---")
-
-    # Personal Information Section
-    st.markdown("### 👤 Personal Information")
-    personal_info = st.session_state.personal_info
-    
-    if personal_info:
-        info_col1, info_col2 = st.columns(2)
-        
-        with info_col1:
-            st.markdown("**Name:**")
-            st.write(personal_info.get("name", "Not found") or "Not found")
-            
-            st.markdown("**Email:**")
-            st.write(personal_info.get("email", "Not found") or "Not found")
-        
-        with info_col2:
-            st.markdown("**Phone Number:**")
-            st.write(personal_info.get("phone_number", "Not found") or "Not found")
-            
-            if personal_info.get("major_city") or personal_info.get("province"):
-                st.markdown("**Location:**")
-                location_parts = []
-                if personal_info.get("major_city"):
-                    location_parts.append(personal_info["major_city"].title())
-                if personal_info.get("province"):
-                    location_parts.append(personal_info["province"].upper())
-                st.write(", ".join(location_parts) if location_parts else "Not found")
-    else:
-        st.warning("No personal information could be extracted from the resume.")
-
-    st.markdown("---")
-    
-    # Job Description Keywords Section
-    st.markdown("### 📋 Job Description Keywords")
-    jd_keywords = st.session_state.jd_keywords
-    if jd_keywords:
-        st.write(jd_keywords)
-    else:
-        st.warning("No keywords extracted from job description.")
-
-    # Websites Section
-    st.markdown("### 🌐 Websites Found in Resume")
-    websites = st.session_state.websites
-    
-    if websites:
-        st.write(f"Found {len(websites)} website(s):")
-        for i, website in enumerate(websites, 1):
-            st.write(f"{i}. {website}")
-    else:
-        st.info("No websites found in the resume.")
-
-    st.markdown("---")
-    
-    # # Just need to see the PDF Content
-    # st.write(st.session_state.resume_text)
-
-    # Action buttons
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        if st.button("🤖 AI Analysis", type="secondary", use_container_width=True):
-            st.session_state.page = 4
-            st.rerun()
-
-    with col2:
-        if st.button("🔄 Start Over", type="primary", use_container_width=True):
-            # Reset session state
-            st.session_state.page = 1
-            st.session_state.job_description = ""
-            st.session_state.resume_file = None
-            st.session_state.resume_text = None
-            st.session_state.jd_keywords = None
-            st.session_state.resume_keywords = None
-            st.session_state.personal_info = None
-            st.session_state.websites = None
-            st.session_state.job_info = None
-            st.session_state.comprehensive_job_info = None
-            st.session_state.comprehensive_resume_info = None
-            st.session_state.ats_score = None
-            st.session_state.llm_analysis = None
-            st.session_state.profile_id = None
-            st.rerun()
-
-    # Display Keyword Analysis Details
-    keyword_analysis = ats_score.get('keyword_analysis', {})
-    if keyword_analysis and keyword_analysis.get('categorized_matches'):
-        st.markdown("### 🔍 Keyword Category Analysis")
-        categorized = keyword_analysis['categorized_matches']
-
-        # Display category scores
-        cat_cols = st.columns(min(len(categorized), 3))
-        for i, (category, data) in enumerate(list(categorized.items())[:3]):
-            with cat_cols[i]:
-                score = data.get('score', 0)
-                st.metric(
-                    f"{category.replace('_', ' ').title()}",
-                    f"{score:.1f}%",
-                    help=f"Matching score for {category}"
-                )
-
-    # Display Comprehensive Analysis
-    st.markdown("---")
-    st.markdown("## 📊 Detailed Analysis")
-
-    # Get comprehensive information
-    job_comp = st.session_state.comprehensive_job_info or {}
-    resume_comp = st.session_state.comprehensive_resume_info or {}
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("### 💼 Job Requirements Analysis")
-        if job_comp:
-            st.markdown(f"**Experience Level:** {job_comp.get('experience_level', 'Not specified')}")
-            st.markdown(f"**Work Type:** {job_comp.get('work_type', 'Not specified')}")
-            st.markdown(f"**Employment Type:** {job_comp.get('employment_type', 'Not specified')}")
-
-            if job_comp.get('salary_info'):
-                st.markdown(f"**Salary Info:** {job_comp['salary_info']}")
-
-            if job_comp.get('education_requirements'):
-                st.markdown(f"**Education:** {', '.join(job_comp['education_requirements'][:3])}")
-
-            if job_comp.get('benefits'):
-                st.markdown(f"**Benefits:** {', '.join(job_comp['benefits'][:3])}")
-
-            if job_comp.get('key_skills'):
-                st.markdown("**Key Skills Required:**")
-                st.write(", ".join(job_comp['key_skills'][:10]))
-        else:
-            st.info("Basic job information extracted only")
-
-    with col2:
-        st.markdown("### 📄 Resume Content Analysis")
-        if resume_comp:
-            personal = resume_comp.get('personal_info', {})
-            st.markdown(f"**Contact Completeness:** {ats_score.get('resume_analysis', {}).get('contact_completeness', 0):.0f}%")
-            st.markdown(f"**Experience Entries:** {len(resume_comp.get('work_experience', []))}")
-            st.markdown(f"**Education Entries:** {len(resume_comp.get('education', []))}")
-            st.markdown(f"**Certifications:** {len(resume_comp.get('certifications', []))}")
-            st.markdown(f"**Projects:** {len(resume_comp.get('projects', []))}")
-            st.markdown(f"**Skills Listed:** {len(resume_comp.get('skills', []))}")
-
-            if resume_comp.get('languages'):
-                st.markdown(f"**Languages:** {', '.join(resume_comp['languages'][:3])}")
-
-            sections = resume_comp.get('sections_found', [])
-            if sections:
-                st.markdown(f"**Sections Found:** {', '.join(sections)}")
-        else:
-            st.info("Basic resume information extracted only")
-
-    # Footer
-    st.markdown("---")
-    st.markdown(
-        f"""
-        <div style='text-align: center; color: #666; padding: 10px;'>
-            <p><strong>ResumeMatchAI v{__version__}</strong> — Advanced ATS Resume Scanner</p>
-            <p>Made with ❤️ for job seekers and recruiters | Powered by AI & NLP</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-def page_4_llm_analysis():
-    """PAGE 4: LLM Analysis"""
-    st.title("ResumeMatchAI — LLM Analysis")
-    st.subheader("Step 4 — AI-Powered Comprehensive Analysis")
-
-    # Back button
-    if st.button("← Back", type="secondary"):
-        st.session_state.page = 3
-        st.rerun()
-
-    st.markdown("---")
-
-    # Check if we have the required data
-    if not st.session_state.resume_file or not st.session_state.job_description:
-        st.error("Resume file and job description are required for LLM analysis. Please go back and complete the previous steps.")
-        return
-
-    st.markdown("""
-    ### 🤖 User Profile Extraction with Llama 3.2-1B
-
-    This feature extracts structured user profile information from your resume using Meta's Llama 3.2-1B model:
-    - **Personal Information**: Name, email, phone, location, social links
-    - **Professional Summary**: Career objective or summary
-    - **Skills**: Technical and soft skills
-    - **Work Experience**: Job history with details
-    - **Education**: Academic qualifications
-    - **Certifications, Projects, Languages, Awards**
-
-    The extracted profile will be saved to PostgreSQL for future reference.
-    """)
-
-    # PostgreSQL Connection Status
-    postgres_status = test_connection()
-    if not postgres_status:
-        st.warning("⚠️ **PostgreSQL Connection**: Not connected. Profile will be extracted but not saved. Set POSTGRES_URI environment variable to enable saving.")
-    
-    st.markdown("---")
-    
-    # Web Scraping Section
-    st.markdown("### 🌐 Extract Personal Details from Web Profiles")
-    st.markdown("""
-    Provide URLs to your online profiles to extract additional personal information:
-    - **GitHub**: Uses GitHub API for reliable data extraction
-    - **LinkedIn**: Limited extraction due to anti-scraping measures
-    - **Personal Website**: Extracts basic information from your website
-    """)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        linkedin_url = st.text_input(
-            "LinkedIn URL",
-            placeholder="https://www.linkedin.com/in/username",
-            help="Your LinkedIn profile URL"
-        )
-    
-    with col2:
-        github_url = st.text_input(
-            "GitHub URL",
-            placeholder="https://github.com/username",
-            help="Your GitHub profile URL"
-        )
-    
-    with col3:
-        website_url = st.text_input(
-            "Personal Website",
-            placeholder="https://yourwebsite.com",
-            help="Your personal website or portfolio URL"
-        )
-    
-    # Scrape Web Profiles Button
-    if st.button("🔍 Scrape Web Profiles", type="secondary", use_container_width=True):
-        if not linkedin_url and not github_url and not website_url:
-            st.warning("Please provide at least one URL to scrape.")
-        else:
-            with st.spinner("🌐 Scraping web profiles... This may take a moment."):
-                try:
-                    scraped_data = scrape_all_profiles(
-                        linkedin_url=linkedin_url if linkedin_url else None,
-                        github_url=github_url if github_url else None,
-                        website_url=website_url if website_url else None
-                    )
-                    st.session_state.web_scraped_data = scraped_data
-                    st.success("✅ Web scraping completed!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error scraping web profiles: {str(e)}")
-                    logger.error(f"Web scraping error: {str(e)}")
-    
-    # Display scraped web data if available
-    if st.session_state.web_scraped_data:
-        st.markdown("---")
-        st.markdown("## 🌐 Scraped Web Profile Data")
-        
-        scraped = st.session_state.web_scraped_data
-        
-        # Display combined information prominently
-        if scraped.get('combined_info'):
-            st.markdown("### 📊 Combined Information")
-            combined = scraped['combined_info']
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if combined.get('name'):
-                    st.markdown(f"**Name:** {combined['name']}")
-                if combined.get('email'):
-                    st.markdown(f"**Email:** {combined['email']}")
-                if combined.get('location'):
-                    st.markdown(f"**Location:** {combined['location']}")
-            
-            with col2:
-                if combined.get('company'):
-                    st.markdown(f"**Company:** {combined['company']}")
-                if combined.get('website'):
-                    st.markdown(f"**Website:** {combined['website']}")
-                if combined.get('headline'):
-                    st.markdown(f"**Headline:** {combined['headline']}")
-            
-            if combined.get('bio'):
-                st.markdown("**Bio:**")
-                st.info(combined['bio'])
-        
-        # Display individual source data in expanders
-        st.markdown("### 📁 Detailed Source Data")
-        
-        # GitHub Data
-        if scraped.get('github'):
-            with st.expander("🐙 GitHub Profile Data", expanded=False):
-                github_data = scraped['github']
-                if 'error' in github_data:
-                    st.error(f"❌ {github_data['error']}")
-                    if github_data.get('note'):
-                        st.info(github_data['note'])
-                else:
-                    import json
-                    st.json(github_data)
-                    
-                    # Display key metrics
-                    if github_data.get('public_repos') is not None:
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Public Repos", github_data.get('public_repos', 0))
-                        with col2:
-                            st.metric("Followers", github_data.get('followers', 0))
-                        with col3:
-                            st.metric("Following", github_data.get('following', 0))
-        
-        # LinkedIn Data
-        if scraped.get('linkedin'):
-            with st.expander("💼 LinkedIn Profile Data", expanded=False):
-                linkedin_data = scraped['linkedin']
-                if 'error' in linkedin_data:
-                    st.warning(f"⚠️ {linkedin_data['error']}")
-                    if linkedin_data.get('note'):
-                        st.info(linkedin_data['note'])
-                else:
-                    import json
-                    st.json(linkedin_data)
-        
-        # Personal Website Data
-        if scraped.get('personal_website'):
-            with st.expander("🌐 Personal Website Data", expanded=False):
-                website_data = scraped['personal_website']
-                if 'error' in website_data:
-                    st.error(f"❌ {website_data['error']}")
-                else:
-                    import json
-                    st.json(website_data)
-        
-        # Button to clear scraped data
-        if st.button("🔄 Clear Scraped Data", type="secondary"):
-            st.session_state.web_scraped_data = None
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Run Profile Extraction Button
+    # --- Mode Selection ---
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("🚀 Extract & Save Profile", type="primary", use_container_width=True):
-            with st.spinner("🤖 Extracting user profile from resume... This may take a few minutes."):
-                try:
-                    # Extract text from resume file
-                    import tempfile
-                    import os
-                    from io import BytesIO
-                    import pdfplumber
-                    import docx2txt
+        mode = st.radio(
+            "Analysis Mode",
+            ["Resume vs Job Description", "Resume Only"],
+            horizontal=True,
+            help="Choose 'Resume vs Job Description' to compare your resume against a specific job."
+        )
 
-                    # Determine file extension
-                    file_ext = os.path.splitext(st.session_state.resume_file.name)[1].lower()
-                    
-                    # Extract text from file
-                    resume_text_extracted = ""
-                    
-                    if file_ext == '.pdf':
-                        # Try OCR first if available, otherwise use regular extraction
-                        try:
-                            from utils.document_analyzer import DocumentAnalyzer
-                            analyzer = DocumentAnalyzer()
-                            
-                            # Save file temporarily for OCR
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-                                tmp_file.write(st.session_state.resume_file.read())
-                                temp_path = tmp_file.name
-                            
-                            try:
-                                ocr_result = analyzer.analyze_document(temp_path, method="ocr")
-                                # Extract text from OCR result if successful
-                                if "OCR Analysis Not Available" not in ocr_result and "Error" not in ocr_result:
-                                    # Parse OCR result to extract text
-                                    if "Extracted Text Length:" in ocr_result:
-                                        # Extract the text portion from OCR result
-                                        parts = ocr_result.split("Full Text:")
-                                        if len(parts) > 1:
-                                            resume_text_extracted = parts[1].strip()
-                            finally:
-                                if os.path.exists(temp_path):
-                                    os.unlink(temp_path)
-                            
-                            # Reset file pointer
-                            st.session_state.resume_file.seek(0)
-                        except Exception as ocr_error:
-                            logger.warning(f"OCR failed, using regular extraction: {ocr_error}")
-                            # Fall back to regular PDF extraction
-                            pass
-                    
-                    # If OCR didn't work or for DOCX, use regular extraction
-                    if not resume_text_extracted:
-                        if file_ext == '.pdf':
-                            with pdfplumber.open(BytesIO(st.session_state.resume_file.read())) as pdf:
-                                page_texts = []
-                                for page in pdf.pages:
-                                    page_text = page.extract_text()
-                                    if page_text:
-                                        page_texts.append(page_text)
-                                resume_text_extracted = "\n".join(page_texts)
-                            st.session_state.resume_file.seek(0)
-                        elif file_ext == '.docx':
-                            resume_text_extracted = docx2txt.process(BytesIO(st.session_state.resume_file.read()))
-                            st.session_state.resume_file.seek(0)
-                        else:
-                            resume_text_extracted = st.session_state.resume_text or ""
-                    
-                    # Debug: Show extracted text info
-                    if resume_text_extracted:
-                        st.info(f"📄 Extracted {len(resume_text_extracted)} characters from resume")
-                        st.info(f"📝 Word count: {len(resume_text_extracted.split())} words")
-                    
-                    # Extract user profile using LLM
-                    if resume_text_extracted and len(resume_text_extracted.strip()) > 50:
-                        profile = extract_user_profile(resume_text_extracted)
-                        st.write(profile)
-                        
-                        # Check if profile has actual data
-                        if "error" in profile:
-                            st.error(f"❌ Profile extraction error: {profile['error']}")
-                        elif not profile.get('personal_info', {}).get('email') and not profile.get('skills'):
-                            st.warning("⚠️ Profile extracted but appears to be empty. The LLM may not have parsed the resume correctly.")
-                            st.info("💡 **Tip**: Try a resume with clearer formatting or more standard structure.")
-                        
-                        # Save to PostgreSQL if connected
-                        profile_id = None
-                        if postgres_status:
-                            profile_id = save_user_profile(profile)
-                            if profile_id:
-                                st.success(f"✅ Profile saved to PostgreSQL with ID: {profile_id}")
-                            else:
-                                st.warning("⚠️ Profile extracted but failed to save to PostgreSQL")
-                        else:
-                            st.info("ℹ️ Profile extracted but not saved (PostgreSQL not connected)")
-                        
-                        # Store in session state
-                        st.session_state.llm_analysis = profile
-                        st.session_state.profile_id = profile_id
-                    elif not resume_text_extracted:
-                        st.error("❌ Error: Could not extract text from resume file.")
-                        st.info("💡 **Possible causes:**")
-                        st.info("• PDF is image-based (scanned) - needs OCR")
-                        st.info("• File is corrupted or password-protected")
-                        st.info("• Unsupported file format")
-                        st.session_state.llm_analysis = {"error": "Could not extract text from resume file"}
-                    else:
-                        st.error("❌ Error: Extracted text is too short (less than 50 characters).")
-                        st.info(f"📄 Only extracted {len(resume_text_extracted)} characters")
-                        st.info("💡 This usually means the PDF is image-based and needs OCR.")
-                        st.session_state.llm_analysis = {"error": "Extracted text too short"}
-                    
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Profile extraction failed: {str(e)}")
-                    if "HUGGING_FACE_API" in str(e):
-                        st.info("💡 **Setup Required:** Make sure you have set the HUGGING_FACE_API environment variable with your Hugging Face API token.")
-                    elif "PostgreSQL" in str(e) or "psycopg2" in str(e):
-                        st.info("💡 **PostgreSQL Setup:** Install psycopg2-binary and set POSTGRES_URI environment variable. Profile will still be extracted but not saved.")
-                    else:
-                        st.info("💡 **Note:** Check the setup guide for troubleshooting tips.")
+    st.markdown("---")
 
-    # Display profile results if available
-    if st.session_state.llm_analysis:
-        st.markdown("---")
-        st.markdown("## 📊 Extracted User Profile")
+    # --- Inputs ---
+    # Using st.container for grouping
+    with st.container():
+        col1, col2 = st.columns(2)
         
-        profile = st.session_state.llm_analysis
-        
-        # Check if it's an error
-        if isinstance(profile, dict) and "error" in profile:
-            st.error(f"❌ {profile['error']}")
-        else:
-            # Display profile in structured format
-            import json
-            
-            # Personal Information
-            if "personal_info" in profile:
-                st.markdown("### 👤 Personal Information")
-                personal = profile["personal_info"]
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if personal.get("name"):
-                        st.markdown(f"**Name:** {personal['name']}")
-                    if personal.get("email"):
-                        st.markdown(f"**Email:** {personal['email']}")
-                    if personal.get("phone"):
-                        st.markdown(f"**Phone:** {personal['phone']}")
-                
-                with col2:
-                    if personal.get("location"):
-                        st.markdown(f"**Location:** {personal['location']}")
-                    if personal.get("linkedin"):
-                        st.markdown(f"**LinkedIn:** {personal['linkedin']}")
-                    if personal.get("github"):
-                        st.markdown(f"**GitHub:** {personal['github']}")
-            
-            # Summary
-            if profile.get("summary"):
-                st.markdown("### 📝 Professional Summary")
-                st.info(profile["summary"])
-            
-            # Skills
-            if profile.get("skills") and len(profile["skills"]) > 0:
-                st.markdown("### 🛠️ Skills")
-                skills_str = ", ".join(profile["skills"])
-                st.write(skills_str)
-            
-            # Experience
-            if profile.get("experience") and len(profile["experience"]) > 0:
-                st.markdown("### 💼 Work Experience")
-                for exp in profile["experience"]:
-                    with st.expander(f"{exp.get('title', 'N/A')} at {exp.get('company', 'N/A')}"):
-                        if exp.get("location"):
-                            st.write(f"📍 {exp['location']}")
-                        if exp.get("start_date") or exp.get("end_date"):
-                            dates = f"{exp.get('start_date', '')} - {exp.get('end_date', '')}"
-                            st.write(f"📅 {dates}")
-                        if exp.get("description"):
-                            st.write(exp["description"])
-            
-            # Education
-            if profile.get("education") and len(profile["education"]) > 0:
-                st.markdown("### 🎓 Education")
-                for edu in profile["education"]:
-                    with st.expander(f"{edu.get('degree', 'N/A')} - {edu.get('institution', 'N/A')}"):
-                        if edu.get("location"):
-                            st.write(f"📍 {edu['location']}")
-                        if edu.get("graduation_date"):
-                            st.write(f"📅 Graduated: {edu['graduation_date']}")
-                        if edu.get("gpa"):
-                            st.write(f"📊 GPA: {edu['gpa']}")
-            
-            # Certifications
-            if profile.get("certifications") and len(profile["certifications"]) > 0:
-                st.markdown("### 🏆 Certifications")
-                for cert in profile["certifications"]:
-                    st.write(f"• {cert}")
-            
-            # Projects
-            if profile.get("projects") and len(profile["projects"]) > 0:
-                st.markdown("### 🚀 Projects")
-                for proj in profile["projects"]:
-                    with st.expander(proj.get("name", "Project")):
-                        if proj.get("description"):
-                            st.write(proj["description"])
-                        if proj.get("technologies"):
-                            st.write(f"**Technologies:** {', '.join(proj['technologies'])}")
-            
-            # Languages
-            if profile.get("languages") and len(profile["languages"]) > 0:
-                st.markdown("### 🌐 Languages")
-                st.write(", ".join(profile["languages"]))
-            
-            # Awards
-            if profile.get("awards") and len(profile["awards"]) > 0:
-                st.markdown("### 🏅 Awards")
-                for award in profile["awards"]:
-                    st.write(f"• {award}")
-            
-            # Show PostgreSQL ID if saved
-            if st.session_state.get("profile_id"):
-                st.markdown("---")
-                st.success(f"✅ **Profile saved to PostgreSQL** with ID: `{st.session_state.profile_id}`")
-            
-            # Show raw JSON
-            with st.expander("📄 View Raw JSON"):
-                st.json(profile)
-
-        # Action buttons
-        st.markdown("---")
-        col1, col2, col3 = st.columns([1, 1, 1])
-
         with col1:
-            if st.button("📋 Copy Profile JSON", use_container_width=True):
-                # Create a copyable text area
-                import json
-                profile_json = json.dumps(st.session_state.llm_analysis, indent=2)
-                st.text_area(
-                    "Copy the profile JSON below:",
-                    value=profile_json,
-                    height=200,
-                    key="copy_profile"
-                )
-                st.success("Profile JSON is ready to copy!")
+            st.subheader("📄 Upload Resume")
+            uploaded_file = st.file_uploader("Upload PDF or DOCX", type=['pdf', 'docx'], label_visibility="collapsed")
 
         with col2:
-            if st.button("🔄 Extract New Profile", use_container_width=True):
-                st.session_state.llm_analysis = None
-                st.session_state.profile_id = None
-                st.rerun()
+            st.subheader("💼 Job Description")
+            jd_text = st.text_area(
+                "Paste Job Description", 
+                height=200, 
+                placeholder="Paste the job description here...",
+                disabled=(mode == "Resume Only"),
+                label_visibility="collapsed"
+            )
 
-        with col3:
-            if st.button("🏠 Start Over", use_container_width=True):
-                # Reset all session state
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                st.rerun()
-        
-        # Job Recommendations button
-        st.markdown("---")
+        # Analyze Button
+        st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            if st.button("💼 View Job Recommendations", type="primary", use_container_width=True):
-                st.session_state.page = 5
-                st.rerun()
+            analyze_clicked = st.button("🚀 Analyze Resume", type="primary", use_container_width=True)
 
-    # Information about the model
-    st.markdown("---")
-    st.markdown("""
-    ### 🧠 About the AI Model
-
-    **Model:** Meta Llama 3.2-1B  
-    **Purpose:** Advanced natural language understanding for resume-job matching  
-    **Analysis Type:** Comprehensive HR-level assessment  
-
-    *Note: This analysis provides AI-generated insights to supplement the ATS scoring. Always consider multiple factors in your job search.*
-    """)
-
-    # Footer
-    st.markdown("---")
-    st.markdown(
-        f"""
-        <div style='text-align: center; color: #666; padding: 10px;'>
-            <p><strong>ResumeMatchAI v{__version__}</strong> — Advanced ATS Resume Scanner with AI Analysis</p>
-            <p>Made with ❤️ for job seekers and recruiters | Powered by AI & NLP</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-def page_5_job_recommendations():
-    """PAGE 5: Job Recommendations"""
-    st.title("💼 Job Position Recommendations")
-    st.subheader("Step 5 — Personalized Career Suggestions")
-
-    # Back button
-    if st.button("← Back", type="secondary"):
-        st.session_state.page = 4
-        st.rerun()
-
-    st.markdown("---")
-
-    # Check if we have resume info
-    if not st.session_state.comprehensive_resume_info:
-        st.error("Resume analysis required. Please complete the previous steps first.")
-        return
-
-    st.markdown("""
-    ### 🎯 About Job Recommendations
-
-    Based on your resume analysis, we've identified job positions that match your skills, experience, and education.
-    Each recommendation includes:
-    - **Match Score**: Overall compatibility (0-100)
-    - **Skill Analysis**: Required skills you have vs. skills to develop
-    - **Experience & Education Match**: How well your background aligns
-    - **Actionable Insights**: Steps to improve your candidacy
-    """)
-
-    # Generate recommendations if not already done
-    if st.session_state.job_recommendations is None:
-        with st.spinner("🔍 Analyzing your profile and finding matching positions..."):
-            try:
-                recommendations = get_job_recommendations(
-                    st.session_state.comprehensive_resume_info,
-                    top_n=10
-                )
-                st.session_state.job_recommendations = recommendations
-            except Exception as e:
-                st.error(f"Error generating recommendations: {str(e)}")
-                logger.error(f"Job recommendation error: {str(e)}")
-                return
-
-    recommendations = st.session_state.job_recommendations
-
-    if not recommendations:
-        st.warning("No job recommendations could be generated. Please ensure your resume has sufficient information.")
-        return
-
-    # Display summary statistics
-    st.markdown("---")
-    st.markdown("## 📊 Your Profile Summary")
-
-    resume_info = st.session_state.comprehensive_resume_info
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        skills_count = len(resume_info.get('skills', []))
-        st.metric("Skills Identified", skills_count)
-
-    with col2:
-        experience_count = len(resume_info.get('work_experience', []))
-        st.metric("Work Experience", f"{experience_count} positions")
-
-    with col3:
-        education_count = len(resume_info.get('education', []))
-        st.metric("Education", f"{education_count} entries")
-
-    with col4:
-        avg_match = sum(r['match_score'] for r in recommendations[:5]) / min(5, len(recommendations))
-        st.metric("Avg Match (Top 5)", f"{avg_match:.1f}%")
-
-    # Display recommendations
-    st.markdown("---")
-    st.markdown("## 🎯 Recommended Positions")
-
-    # Filter options
-    col1, col2 = st.columns(2)
-    with col1:
-        experience_filter = st.selectbox(
-            "Filter by Experience Level",
-            ["All", "Entry", "Mid", "Senior"],
-            index=0
-        )
-    with col2:
-        min_match_score = st.slider(
-            "Minimum Match Score",
-            min_value=0,
-            max_value=100,
-            value=0,
-            step=10
-        )
-
-    # Apply filters
-    filtered_recommendations = recommendations
-    if experience_filter != "All":
-        filtered_recommendations = [
-            r for r in filtered_recommendations
-            if r['job']['experience_level'].lower() == experience_filter.lower()
-        ]
-    filtered_recommendations = [
-        r for r in filtered_recommendations
-        if r['match_score'] >= min_match_score
-    ]
-
-    if not filtered_recommendations:
-        st.info("No positions match your filter criteria. Try adjusting the filters.")
-        return
-
-    st.markdown(f"**Showing {len(filtered_recommendations)} position(s)**")
-    st.markdown("---")
-
-    # Display each recommendation
-    for i, rec in enumerate(filtered_recommendations, 1):
-        job = rec['job']
-        match_score = rec['match_score']
-
-        # Color code based on match score
-        if match_score >= 80:
-            score_color = "🟢"
-            score_label = "Excellent Match"
-        elif match_score >= 60:
-            score_color = "🟡"
-            score_label = "Good Match"
-        elif match_score >= 40:
-            score_color = "🟠"
-            score_label = "Fair Match"
+    # --- Processing ---
+    if analyze_clicked:
+        if not uploaded_file:
+            st.error("⚠️ Please upload a resume file first.")
         else:
-            score_color = "🔴"
-            score_label = "Developing Match"
-
-        # Job card
-        with st.container():
-            # Header
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"### {i}. {job['title']}")
-                st.markdown(f"**{job['industry']}** | **{job['experience_level'].title()} Level** | {job['salary_range']}")
-            with col2:
-                st.markdown(f"### {score_color} {match_score:.1f}%")
-                st.caption(score_label)
-
-            # Description
-            st.markdown(f"*{job['description']}*")
-
-            # Detailed breakdown in expander
-            with st.expander("📊 View Detailed Match Analysis"):
-                # Score breakdown
-                st.markdown("#### Match Score Breakdown")
-                score_col1, score_col2, score_col3 = st.columns(3)
-
-                with score_col1:
-                    st.metric("Skills Match", f"{rec['skill_match_score']:.1f}%")
-                    st.caption("60% weight")
-
-                with score_col2:
-                    st.metric("Experience Match", f"{rec['experience_match_score']:.1f}%")
-                    st.caption("25% weight")
-
-                with score_col3:
-                    st.metric("Education Match", f"{rec['education_match_score']:.1f}%")
-                    st.caption("15% weight")
-
-                st.markdown("---")
-
-                # Skills analysis
-                st.markdown("#### 🛠️ Skills Analysis")
-
-                skill_col1, skill_col2 = st.columns(2)
-
-                with skill_col1:
-                    st.markdown("**✅ Required Skills You Have:**")
-                    if rec['matched_required_skills']:
-                        for skill in rec['matched_required_skills']:
-                            st.markdown(f"• {skill}")
+            with st.spinner("Processing your resume..."):
+                # Extract Text
+                resume_text = extract_text_from_file(uploaded_file)
+                st.session_state.resume_text = resume_text
+                
+                if not resume_text:
+                    st.error("❌ Could not extract text. Please try a different file.")
+                else:
+                    # Prepare Data
+                    analysis_mode = "resume_job_match" if mode == "Resume vs Job Description" else "resume_only"
+                    
+                    if analysis_mode == "resume_job_match" and not jd_text.strip():
+                        st.error("⚠️ Job description is required for comparison mode.")
                     else:
-                        st.info("None identified")
+                        # Call ATS Engine
+                        input_data = {
+                            "mode": analysis_mode,
+                            "resume_text": resume_text,
+                            "job_description": jd_text if analysis_mode == "resume_job_match" else ""
+                        }
+                        
+                        try:
+                            result = process_ats_request(input_data)
+                            st.session_state.ats_result = result
+                            st.success("Analysis Complete!")
+                        except Exception as e:
+                            st.error(f"Analysis failed: {str(e)}")
 
-                    if rec['matched_preferred_skills']:
-                        st.markdown("**⭐ Preferred Skills You Have:**")
-                        for skill in rec['matched_preferred_skills'][:5]:
-                            st.markdown(f"• {skill}")
+    # --- Results Dashboard ---
+    if st.session_state.ats_result:
+        res = st.session_state.ats_result
+        st.markdown("---")
+        st.header("📊 Analysis Results")
+        
+        # 1. Top Level Metrics
+        score = res.get('final_ats_score', 0)
+        
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("ATS Score", f"{score}/100", delta=f"{score-70}" if score > 70 else f"{score-70}")
+        
+        with m2:
+            if 'resume_keyword_match' in res:
+                matched = len(res['resume_keyword_match'].get('matched_keywords', []))
+                st.metric("Keywords Matched", matched, delta="Count", delta_color="off")
+            else:
+                st.metric("Strengths Identified", len(res.get('strengths', [])), delta="Count")
+                
+        with m3:
+            if 'resume_keyword_match' in res:
+                missing = len(res['resume_keyword_match'].get('missing_keywords', []))
+                st.metric("Missing Keywords", missing, delta="Critical", delta_color="inverse")
+            else:
+                st.metric("Improvements Needed", len(res.get('weaknesses', [])), delta="Count", delta_color="inverse")
 
-                with skill_col2:
-                    st.markdown("**📚 Required Skills to Develop:**")
-                    if rec['missing_required_skills']:
-                        for skill in rec['missing_required_skills'][:8]:
-                            st.markdown(f"• {skill}")
-                        if len(rec['missing_required_skills']) > 8:
-                            st.caption(f"... and {len(rec['missing_required_skills']) - 8} more")
-                    else:
-                        st.success("You have all required skills!")
-
-                st.markdown("---")
-
-                # Experience and education
-                st.markdown("#### 💼 Experience & Education")
-                st.info(rec['experience_explanation'])
-                st.info(rec['education_explanation'])
-
-                st.markdown("---")
-
-                # Insights
-                st.markdown("#### 💡 Actionable Insights")
-                for insight in rec['insights']:
-                    st.markdown(f"• {insight}")
-
-            st.markdown("---")
-
-    # Action buttons
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 1, 1])
-
-    with col1:
-        if st.button("🔄 Refresh Recommendations", use_container_width=True):
-            st.session_state.job_recommendations = None
-            st.rerun()
-
-    with col2:
-        if st.button("← Back to Analysis", use_container_width=True):
-            st.session_state.page = 4
-            st.rerun()
-
-    with col3:
-        if st.button("🏠 Start Over", use_container_width=True):
-            # Reset all session state
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-
-    # Footer
-    st.markdown("---")
-    st.markdown(
-        f"""
-        <div style='text-align: center; color: #666; padding: 10px;'>
-            <p><strong>ResumeMatchAI v{__version__}</strong> — Advanced ATS Resume Scanner with Job Recommendations</p>
-            <p>Made with ❤️ for job seekers and recruiters | Powered by AI & NLP</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-
-# Main app logic
-def main():
-    if st.session_state.page == 1:
-        page_1_job_description()
-    elif st.session_state.page == 2:
-        page_2_resume_upload()
-    elif st.session_state.page == 3:
-        page_3_keywords_extraction_and_results()
-    elif st.session_state.page == 4:
-        page_4_llm_analysis()
-    elif st.session_state.page == 5:
-        page_5_job_recommendations()
-    else:
-        st.session_state.page = 1
-        st.rerun()
+        # 2. Detailed Breakdown
+        st.markdown("### 📝 Detailed Breakdown")
+        
+        tab1, tab2, tab3 = st.tabs(["Keywords & Skills", "Gaps & Improvements", "Full Report"])
+        
+        with tab1:
+            if 'resume_keyword_match' in res:
+                matches = res['resume_keyword_match'].get('matched_keywords', [])
+                st.success(f"✅ **Matched Keywords ({len(matches)})**")
+                st.write(", ".join(matches))
+                
+                partials = res['resume_keyword_match'].get('partial_matches', [])
+                if partials:
+                    st.warning(f"⚠️ **Partial Matches ({len(partials)})**")
+                    st.write(", ".join(partials))
+            else:
+                st.success("✅ **Strengths**")
+                for s in res.get('strengths', []):
+                    st.write(f"- {s}")
+                    
+        with tab2:
+            if 'resume_keyword_match' in res:
+                missing = res['resume_keyword_match'].get('missing_keywords', [])
+                st.error(f"❌ **Missing Keywords ({len(missing)})**")
+                st.write(", ".join(missing))
+                
+                if 'recommendations' in res:
+                    st.markdown("#### 💡 Recommendations")
+                    for rec in res['recommendations']:
+                        st.info(rec)
+            else:
+                st.error("⚠️ **Weaknesses**")
+                for w in res.get('weaknesses', []):
+                    st.write(f"- {w}")
+                    
+                if 'improvement_suggestions' in res:
+                    st.markdown("#### 💡 Suggestions")
+                    for s in res['improvement_suggestions']:
+                        st.info(s)
+                        
+        with tab3:
+            st.json(res)
 
 if __name__ == "__main__":
     main()
