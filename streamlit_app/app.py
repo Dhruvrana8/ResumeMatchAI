@@ -14,6 +14,8 @@ from utils.resume_keywords import get_personal_info, get_websites, get_job_info,
 from utils.ats_scoring import calculate_ats_score
 from utils.llama_model import extract_user_profile
 from utils.postgres_client import save_user_profile, test_connection
+from utils.web_scraper import scrape_all_profiles
+from utils.job_recommendations import get_job_recommendations
 
 # Add streamlit_app directory to path for imports
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -67,6 +69,10 @@ if 'llm_analysis' not in st.session_state:
     st.session_state.llm_analysis = None
 if 'profile_id' not in st.session_state:
     st.session_state.profile_id = None
+if 'web_scraped_data' not in st.session_state:
+    st.session_state.web_scraped_data = None
+if 'job_recommendations' not in st.session_state:
+    st.session_state.job_recommendations = None
 
 def page_1_job_description():
     """PAGE 1: Job Description Input"""
@@ -558,6 +564,146 @@ def page_4_llm_analysis():
     if not postgres_status:
         st.warning("⚠️ **PostgreSQL Connection**: Not connected. Profile will be extracted but not saved. Set POSTGRES_URI environment variable to enable saving.")
     
+    st.markdown("---")
+    
+    # Web Scraping Section
+    st.markdown("### 🌐 Extract Personal Details from Web Profiles")
+    st.markdown("""
+    Provide URLs to your online profiles to extract additional personal information:
+    - **GitHub**: Uses GitHub API for reliable data extraction
+    - **LinkedIn**: Limited extraction due to anti-scraping measures
+    - **Personal Website**: Extracts basic information from your website
+    """)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        linkedin_url = st.text_input(
+            "LinkedIn URL",
+            placeholder="https://www.linkedin.com/in/username",
+            help="Your LinkedIn profile URL"
+        )
+    
+    with col2:
+        github_url = st.text_input(
+            "GitHub URL",
+            placeholder="https://github.com/username",
+            help="Your GitHub profile URL"
+        )
+    
+    with col3:
+        website_url = st.text_input(
+            "Personal Website",
+            placeholder="https://yourwebsite.com",
+            help="Your personal website or portfolio URL"
+        )
+    
+    # Scrape Web Profiles Button
+    if st.button("🔍 Scrape Web Profiles", type="secondary", use_container_width=True):
+        if not linkedin_url and not github_url and not website_url:
+            st.warning("Please provide at least one URL to scrape.")
+        else:
+            with st.spinner("🌐 Scraping web profiles... This may take a moment."):
+                try:
+                    scraped_data = scrape_all_profiles(
+                        linkedin_url=linkedin_url if linkedin_url else None,
+                        github_url=github_url if github_url else None,
+                        website_url=website_url if website_url else None
+                    )
+                    st.session_state.web_scraped_data = scraped_data
+                    st.success("✅ Web scraping completed!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error scraping web profiles: {str(e)}")
+                    logger.error(f"Web scraping error: {str(e)}")
+    
+    # Display scraped web data if available
+    if st.session_state.web_scraped_data:
+        st.markdown("---")
+        st.markdown("## 🌐 Scraped Web Profile Data")
+        
+        scraped = st.session_state.web_scraped_data
+        
+        # Display combined information prominently
+        if scraped.get('combined_info'):
+            st.markdown("### 📊 Combined Information")
+            combined = scraped['combined_info']
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if combined.get('name'):
+                    st.markdown(f"**Name:** {combined['name']}")
+                if combined.get('email'):
+                    st.markdown(f"**Email:** {combined['email']}")
+                if combined.get('location'):
+                    st.markdown(f"**Location:** {combined['location']}")
+            
+            with col2:
+                if combined.get('company'):
+                    st.markdown(f"**Company:** {combined['company']}")
+                if combined.get('website'):
+                    st.markdown(f"**Website:** {combined['website']}")
+                if combined.get('headline'):
+                    st.markdown(f"**Headline:** {combined['headline']}")
+            
+            if combined.get('bio'):
+                st.markdown("**Bio:**")
+                st.info(combined['bio'])
+        
+        # Display individual source data in expanders
+        st.markdown("### 📁 Detailed Source Data")
+        
+        # GitHub Data
+        if scraped.get('github'):
+            with st.expander("🐙 GitHub Profile Data", expanded=False):
+                github_data = scraped['github']
+                if 'error' in github_data:
+                    st.error(f"❌ {github_data['error']}")
+                    if github_data.get('note'):
+                        st.info(github_data['note'])
+                else:
+                    import json
+                    st.json(github_data)
+                    
+                    # Display key metrics
+                    if github_data.get('public_repos') is not None:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Public Repos", github_data.get('public_repos', 0))
+                        with col2:
+                            st.metric("Followers", github_data.get('followers', 0))
+                        with col3:
+                            st.metric("Following", github_data.get('following', 0))
+        
+        # LinkedIn Data
+        if scraped.get('linkedin'):
+            with st.expander("💼 LinkedIn Profile Data", expanded=False):
+                linkedin_data = scraped['linkedin']
+                if 'error' in linkedin_data:
+                    st.warning(f"⚠️ {linkedin_data['error']}")
+                    if linkedin_data.get('note'):
+                        st.info(linkedin_data['note'])
+                else:
+                    import json
+                    st.json(linkedin_data)
+        
+        # Personal Website Data
+        if scraped.get('personal_website'):
+            with st.expander("🌐 Personal Website Data", expanded=False):
+                website_data = scraped['personal_website']
+                if 'error' in website_data:
+                    st.error(f"❌ {website_data['error']}")
+                else:
+                    import json
+                    st.json(website_data)
+        
+        # Button to clear scraped data
+        if st.button("🔄 Clear Scraped Data", type="secondary"):
+            st.session_state.web_scraped_data = None
+            st.rerun()
+    
+    st.markdown("---")
+    
     # Run Profile Extraction Button
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -634,6 +780,7 @@ def page_4_llm_analysis():
                     # Extract user profile using LLM
                     if resume_text_extracted and len(resume_text_extracted.strip()) > 50:
                         profile = extract_user_profile(resume_text_extracted)
+                        st.write(profile)
                         
                         # Check if profile has actual data
                         if "error" in profile:
@@ -816,6 +963,14 @@ def page_4_llm_analysis():
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
                 st.rerun()
+        
+        # Job Recommendations button
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("💼 View Job Recommendations", type="primary", use_container_width=True):
+                st.session_state.page = 5
+                st.rerun()
 
     # Information about the model
     st.markdown("---")
@@ -840,6 +995,248 @@ def page_4_llm_analysis():
         """,
         unsafe_allow_html=True
     )
+
+
+def page_5_job_recommendations():
+    """PAGE 5: Job Recommendations"""
+    st.title("💼 Job Position Recommendations")
+    st.subheader("Step 5 — Personalized Career Suggestions")
+
+    # Back button
+    if st.button("← Back", type="secondary"):
+        st.session_state.page = 4
+        st.rerun()
+
+    st.markdown("---")
+
+    # Check if we have resume info
+    if not st.session_state.comprehensive_resume_info:
+        st.error("Resume analysis required. Please complete the previous steps first.")
+        return
+
+    st.markdown("""
+    ### 🎯 About Job Recommendations
+
+    Based on your resume analysis, we've identified job positions that match your skills, experience, and education.
+    Each recommendation includes:
+    - **Match Score**: Overall compatibility (0-100)
+    - **Skill Analysis**: Required skills you have vs. skills to develop
+    - **Experience & Education Match**: How well your background aligns
+    - **Actionable Insights**: Steps to improve your candidacy
+    """)
+
+    # Generate recommendations if not already done
+    if st.session_state.job_recommendations is None:
+        with st.spinner("🔍 Analyzing your profile and finding matching positions..."):
+            try:
+                recommendations = get_job_recommendations(
+                    st.session_state.comprehensive_resume_info,
+                    top_n=10
+                )
+                st.session_state.job_recommendations = recommendations
+            except Exception as e:
+                st.error(f"Error generating recommendations: {str(e)}")
+                logger.error(f"Job recommendation error: {str(e)}")
+                return
+
+    recommendations = st.session_state.job_recommendations
+
+    if not recommendations:
+        st.warning("No job recommendations could be generated. Please ensure your resume has sufficient information.")
+        return
+
+    # Display summary statistics
+    st.markdown("---")
+    st.markdown("## 📊 Your Profile Summary")
+
+    resume_info = st.session_state.comprehensive_resume_info
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        skills_count = len(resume_info.get('skills', []))
+        st.metric("Skills Identified", skills_count)
+
+    with col2:
+        experience_count = len(resume_info.get('work_experience', []))
+        st.metric("Work Experience", f"{experience_count} positions")
+
+    with col3:
+        education_count = len(resume_info.get('education', []))
+        st.metric("Education", f"{education_count} entries")
+
+    with col4:
+        avg_match = sum(r['match_score'] for r in recommendations[:5]) / min(5, len(recommendations))
+        st.metric("Avg Match (Top 5)", f"{avg_match:.1f}%")
+
+    # Display recommendations
+    st.markdown("---")
+    st.markdown("## 🎯 Recommended Positions")
+
+    # Filter options
+    col1, col2 = st.columns(2)
+    with col1:
+        experience_filter = st.selectbox(
+            "Filter by Experience Level",
+            ["All", "Entry", "Mid", "Senior"],
+            index=0
+        )
+    with col2:
+        min_match_score = st.slider(
+            "Minimum Match Score",
+            min_value=0,
+            max_value=100,
+            value=0,
+            step=10
+        )
+
+    # Apply filters
+    filtered_recommendations = recommendations
+    if experience_filter != "All":
+        filtered_recommendations = [
+            r for r in filtered_recommendations
+            if r['job']['experience_level'].lower() == experience_filter.lower()
+        ]
+    filtered_recommendations = [
+        r for r in filtered_recommendations
+        if r['match_score'] >= min_match_score
+    ]
+
+    if not filtered_recommendations:
+        st.info("No positions match your filter criteria. Try adjusting the filters.")
+        return
+
+    st.markdown(f"**Showing {len(filtered_recommendations)} position(s)**")
+    st.markdown("---")
+
+    # Display each recommendation
+    for i, rec in enumerate(filtered_recommendations, 1):
+        job = rec['job']
+        match_score = rec['match_score']
+
+        # Color code based on match score
+        if match_score >= 80:
+            score_color = "🟢"
+            score_label = "Excellent Match"
+        elif match_score >= 60:
+            score_color = "🟡"
+            score_label = "Good Match"
+        elif match_score >= 40:
+            score_color = "🟠"
+            score_label = "Fair Match"
+        else:
+            score_color = "🔴"
+            score_label = "Developing Match"
+
+        # Job card
+        with st.container():
+            # Header
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"### {i}. {job['title']}")
+                st.markdown(f"**{job['industry']}** | **{job['experience_level'].title()} Level** | {job['salary_range']}")
+            with col2:
+                st.markdown(f"### {score_color} {match_score:.1f}%")
+                st.caption(score_label)
+
+            # Description
+            st.markdown(f"*{job['description']}*")
+
+            # Detailed breakdown in expander
+            with st.expander("📊 View Detailed Match Analysis"):
+                # Score breakdown
+                st.markdown("#### Match Score Breakdown")
+                score_col1, score_col2, score_col3 = st.columns(3)
+
+                with score_col1:
+                    st.metric("Skills Match", f"{rec['skill_match_score']:.1f}%")
+                    st.caption("60% weight")
+
+                with score_col2:
+                    st.metric("Experience Match", f"{rec['experience_match_score']:.1f}%")
+                    st.caption("25% weight")
+
+                with score_col3:
+                    st.metric("Education Match", f"{rec['education_match_score']:.1f}%")
+                    st.caption("15% weight")
+
+                st.markdown("---")
+
+                # Skills analysis
+                st.markdown("#### 🛠️ Skills Analysis")
+
+                skill_col1, skill_col2 = st.columns(2)
+
+                with skill_col1:
+                    st.markdown("**✅ Required Skills You Have:**")
+                    if rec['matched_required_skills']:
+                        for skill in rec['matched_required_skills']:
+                            st.markdown(f"• {skill}")
+                    else:
+                        st.info("None identified")
+
+                    if rec['matched_preferred_skills']:
+                        st.markdown("**⭐ Preferred Skills You Have:**")
+                        for skill in rec['matched_preferred_skills'][:5]:
+                            st.markdown(f"• {skill}")
+
+                with skill_col2:
+                    st.markdown("**📚 Required Skills to Develop:**")
+                    if rec['missing_required_skills']:
+                        for skill in rec['missing_required_skills'][:8]:
+                            st.markdown(f"• {skill}")
+                        if len(rec['missing_required_skills']) > 8:
+                            st.caption(f"... and {len(rec['missing_required_skills']) - 8} more")
+                    else:
+                        st.success("You have all required skills!")
+
+                st.markdown("---")
+
+                # Experience and education
+                st.markdown("#### 💼 Experience & Education")
+                st.info(rec['experience_explanation'])
+                st.info(rec['education_explanation'])
+
+                st.markdown("---")
+
+                # Insights
+                st.markdown("#### 💡 Actionable Insights")
+                for insight in rec['insights']:
+                    st.markdown(f"• {insight}")
+
+            st.markdown("---")
+
+    # Action buttons
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 1, 1])
+
+    with col1:
+        if st.button("🔄 Refresh Recommendations", use_container_width=True):
+            st.session_state.job_recommendations = None
+            st.rerun()
+
+    with col2:
+        if st.button("← Back to Analysis", use_container_width=True):
+            st.session_state.page = 4
+            st.rerun()
+
+    with col3:
+        if st.button("🏠 Start Over", use_container_width=True):
+            # Reset all session state
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        f"""
+        <div style='text-align: center; color: #666; padding: 10px;'>
+            <p><strong>ResumeMatchAI v{__version__}</strong> — Advanced ATS Resume Scanner with Job Recommendations</p>
+            <p>Made with ❤️ for job seekers and recruiters | Powered by AI & NLP</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
     
 
 # Main app logic
@@ -852,6 +1249,8 @@ def main():
         page_3_keywords_extraction_and_results()
     elif st.session_state.page == 4:
         page_4_llm_analysis()
+    elif st.session_state.page == 5:
+        page_5_job_recommendations()
     else:
         st.session_state.page = 1
         st.rerun()

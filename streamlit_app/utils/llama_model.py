@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 # Model configuration
 model_id = "meta-llama/Llama-3.2-3B-Instruct"
-HUGGING_FACE_API = os.environ.get("HUGGING_FACE_API", None)
 
 _pipe = None
 
@@ -25,6 +24,12 @@ elif torch.backends.mps.is_available():
 else:
     device = torch.device("cpu")
 
+
+if torch.cuda.is_available():
+    from google.colab import userdata
+    HUGGING_FACE_API = userdata.get("HUGGING_FACE_API", None)
+else:
+    HUGGING_FACE_API = os.environ.get("HUGGING_FACE_API", None)
 
 def get_llama_pipeline():
     """Get or create the Llama pipeline with lazy loading"""
@@ -46,9 +51,8 @@ def get_llama_pipeline():
                     "text-generation",
                     model=model_id,
                     torch_dtype=dtype,
-                    device_map="auto",
-                    token=HUGGING_FACE_API,
-                    model_kwargs={"load_in_8bit": device.type == "cuda"}
+                    device=device,
+                    token=HUGGING_FACE_API
                 )
                 logger.info("Successfully loaded model from local cache")
             except Exception as e1:
@@ -73,9 +77,8 @@ def get_llama_pipeline():
                         "text-generation",
                         model=model_id,
                         torch_dtype=dtype,
-                        device_map="auto",
-                        token=HUGGING_FACE_API,
-                        model_kwargs={"load_in_8bit": device.type == "cuda"}
+                        device=device,
+                        token=HUGGING_FACE_API
                     )
                     logger.info("Successfully downloaded and loaded model")
                 except Exception as e2:
@@ -86,7 +89,7 @@ def get_llama_pipeline():
                         "text-generation",
                         model=model_id,
                         torch_dtype=torch.float32,
-                        device_map="cpu",
+                        device=torch.device("cpu"),
                         token=HUGGING_FACE_API
                     )
                     logger.info("Successfully loaded model on CPU")
@@ -118,57 +121,118 @@ def fix_json_str(s: str):
     return s
 
 
+import json
+import re
+
 def extract_json(text: str):
-    """Extract the first valid JSON object from text"""
-    # Capture deeply nested JSON
-    pattern = r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}'
-    match = re.search(pattern, text, re.DOTALL)
+    """
+    Extract the first valid JSON object from a text string.
+    Handles deeply nested JSON and ignores braces inside strings.
+    """
 
-    if not match:
-        raise ValueError("JSON not found in output.")
+    start = text.find("{")
+    if start == -1:
+        raise ValueError("No JSON object found")
 
-    cleaned = fix_json_str(match.group(0))
-    return json.loads(cleaned)
+    brace_count = 0
+    in_string = False
+    escape = False
+
+    for i in range(start, len(text)):
+        char = text[i]
+
+        if char == '"' and not escape:
+            in_string = not in_string
+
+        if char == "\\" and not escape:
+            escape = True
+            continue
+        else:
+            escape = False
+
+        if not in_string:
+            if char == "{":
+                brace_count += 1
+            elif char == "}":
+                brace_count -= 1
+
+        if brace_count == 0 and i > start:
+            json_str = text[start:i + 1]
+            return json.loads(fix_json_str(json_str))
+
+    raise ValueError("Incomplete JSON object found")
+
 
 
 # --- PROFILE EXTRACTION -------------------------------------------------------
 
-def extract_user_profile(resume_text: str, max_new_tokens: int = 512) -> dict:
+def extract_user_profile(resume_text: str, max_new_tokens: int = 1024) -> dict:
     if not resume_text.strip():
         return {"error": "Resume text is required"}
 
-    resume_text = resume_text[:30000]
+    resume_text = resume_text[:10000]
 
     try:
         pipe = get_llama_pipeline()
 
         prompt = f"""
-Extract structured data from this resume. 
-Return ONLY valid JSON. No explanation.
+## Structured Resume Data Extraction
 
-Resume:
+**Objective:** Extract all available information from the provided resume text and map it precisely into the required JSON schema.
+
+**Resume Text:**
 {resume_text}
 
-JSON Format:
-{{
-  "name": "",
-  "email": "",
-  "phone": "",
-  "location": "",
-  "links": {{
-    "linkedin": "",
-    "github": "",
-    "website": ""
-  }},
-  "summary": "",
-  "skills": [],
-  "experience": [],
-  "education": [],
-  "projects": []
-}}
+**Required Output Schema (JSON Format):**
+Please adhere strictly to the following structure, including data types for each field.
 
-Return JSON only:
+```json
+{{
+  "name": "string (Full name)",
+  "email": "string (Primary email address)",
+  "phone": "string (Formatted phone number)",
+  "location": "string (City, State/Province, Country if available)",
+  "links": {{
+    "linkedin": "string (URL or empty string)",
+    "github": "string (URL or empty string)",
+    "website": "string (URL or empty string)"
+  }},
+  "summary": "string (A concise, professional summary or objective statement)",
+  "skills": [
+    "string (List of key technical and soft skills)"
+  ],
+  "experience": [
+    {{
+      "title": "string (Your role/position)",
+      "company": "string (Company name)",
+      "startDate": "string (Start date, e.g., 'YYYY-MM' or 'Month YYYY')",
+      "endDate": "string (End date or 'Present')",
+      "description": [
+        "string (Bullet point summarizing a key responsibility or achievement)"
+      ]
+    }}
+  ],
+  "education": [
+    {{
+      "institution": "string (University or School name)",
+      "degree": "string (Degree, e.g., 'M.S. in Computer Science')",
+      "fieldOfStudy": "string (Specific field, if applicable)",
+      "startDate": "string (Start date, e.g., 'YYYY')",
+      "endDate": "string (End date or 'Present')",
+      "gpa": "string (GPA if explicitly mentioned, otherwise empty string)"
+    }}
+  ],
+  "projects": [
+    {{
+      "name": "string (Project title)",
+      "description": "string (Brief project description and technologies used)",
+      "link": "string (Project URL or empty string)"
+    }}
+  ]
+}}
+```
 """
+# end the prompt
 
         logger.info("Extracting user profile...")
 
@@ -183,6 +247,7 @@ Return JSON only:
         )
 
         generated = outputs[0].get("generated_text", "")
+        print("The generated text is ", generated)
 
         return extract_json(generated)
 
