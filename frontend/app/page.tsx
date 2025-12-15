@@ -8,9 +8,9 @@ import { ResultsSection } from "@/components/landing/ResultsSection";
 import { Footer } from "@/components/landing/Footer";
 
 export default function Dashboard() {
-  const [selectedMode, setSelectedMode] = useState<"score" | "compare">(
-    "compare"
-  );
+  const [selectedMode, setSelectedMode] = useState<
+    "score" | "compare" | "create-resume"
+  >("compare");
   const [showResults, setShowResults] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 

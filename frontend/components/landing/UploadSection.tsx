@@ -5,7 +5,7 @@ import { useMemo } from "react";
 interface UploadSectionProps {
   onAnalyze: () => void;
   isAnalyzing: boolean;
-  mode: "score" | "compare";
+  mode: "score" | "compare" | "create-resume";
 }
 
 export function UploadSection({

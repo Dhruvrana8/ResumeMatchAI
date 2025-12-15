@@ -11,3 +11,11 @@ python-dotenv
 email-validator
 setuptools
 psycopg2
+# OCR/PDF
+pypdf
+python-docx
+# LLM
+transformers
+torch
+accelerate
+bitsandbytes

@@ -50,3 +50,12 @@ class InvalidSenderError(ChatError):
 class PasswordValidationError(UserError):
     def __init__(self):
         super().__init__(status_code=400, detail="Password must contain at least one digit and one letter")
+
+
+class ATSRequestError(HTTPException):
+   """Base exception for ATS request errors"""
+   pass
+
+class ResumeNotFoundError(ATSRequestError):
+    def __init__(self):
+        super().__init__(status_code=404, detail="Resume not found")
