@@ -6,6 +6,7 @@ import { ModeSelection } from "@/components/landing/ModeSelection";
 import { UploadSection } from "@/components/landing/UploadSection";
 import { ResultsSection } from "@/components/landing/ResultsSection";
 import { Footer } from "@/components/landing/Footer";
+import { ApiClient } from "@/lib/api";
 
 export default function Dashboard() {
   const [selectedMode, setSelectedMode] = useState<
@@ -13,13 +14,38 @@ export default function Dashboard() {
   >("compare");
   const [showResults, setShowResults] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [jobDescription, setJobDescription] = useState("");
+  const [analysisResults, setAnalysisResults] = useState<any>(null);
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
+    if (!file) {
+      alert("Please upload a resume first.");
+      return;
+    }
+
+    if (selectedMode === "compare" && !jobDescription) {
+      alert("Please enter a job description.");
+      return;
+    }
+
     setIsAnalyzing(true);
+    setShowResults(false);
 
-    // Simulate API call
-    setTimeout(() => {
-      setIsAnalyzing(false);
+    try {
+      const modeMap = {
+        score: "resume_ats",
+        compare: "resume_vs_jd",
+        "create-resume": "resume_ats", // Fallback or handle appropriately
+      };
+
+      const results = await ApiClient.analyzeResume(
+        file,
+        selectedMode === "compare" ? jobDescription : null,
+        modeMap[selectedMode] as "resume_ats" | "resume_vs_jd"
+      );
+
+      setAnalysisResults(results);
       setShowResults(true);
 
       // Scroll to results
@@ -28,7 +54,12 @@ export default function Dashboard() {
           .getElementById("results-section")
           ?.scrollIntoView({ behavior: "smooth" });
       }, 100);
-    }, 1500);
+    } catch (error) {
+      console.error("Analysis failed:", error);
+      alert("Analysis failed. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -62,12 +93,14 @@ export default function Dashboard() {
               onAnalyze={handleAnalyze}
               isAnalyzing={isAnalyzing}
               mode={selectedMode}
+              onFileSelect={setFile}
+              onJobDescriptionChange={setJobDescription}
             />
           </div>
 
-          {showResults && (
+          {showResults && analysisResults && (
             <div id="results-section" className="animate-slide-up">
-              <ResultsSection />
+              <ResultsSection results={analysisResults} />
             </div>
           )}
         </div>

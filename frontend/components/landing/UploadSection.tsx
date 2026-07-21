@@ -6,14 +6,24 @@ interface UploadSectionProps {
   onAnalyze: () => void;
   isAnalyzing: boolean;
   mode: "score" | "compare" | "create-resume";
+  onFileSelect: (file: File | null) => void;
+  onJobDescriptionChange: (text: string) => void;
 }
 
 export function UploadSection({
   onAnalyze,
   isAnalyzing,
   mode,
+  onFileSelect,
+  onJobDescriptionChange,
 }: UploadSectionProps) {
   const isCompareMode = mode === "compare";
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      onFileSelect(e.target.files[0]);
+    }
+  };
 
   return (
     <div className="glass-panel rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-primary/5">
@@ -50,6 +60,7 @@ export function UploadSection({
             <input
               type="file"
               accept=".pdf"
+              onChange={handleFileChange}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />
             <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4 transition-transform group-hover:scale-105 duration-300">
@@ -77,6 +88,7 @@ export function UploadSection({
             </label>
             <div className="relative flex-1">
               <textarea
+                onChange={(e) => onJobDescriptionChange(e.target.value)}
                 className="w-full h-64 p-4 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 focus:border-primary focus:outline-none resize-none transition-all text-sm leading-relaxed"
                 placeholder="Paste the full job description here to compare keywords..."
               ></textarea>
