@@ -1,6 +1,6 @@
 import io
 import logging
-from pypdf import PdfReader
+import pdfplumber
 from docx import Document
 from fastapi import UploadFile
 
@@ -18,9 +18,9 @@ async def extract_text_from_file(file: UploadFile) -> str:
     
     try:
         if filename.endswith(".pdf"):
-            reader = PdfReader(file_stream)
-            for page in reader.pages:
-                text += page.extract_text() + "\n"
+            with pdfplumber.open(file_stream) as reader:
+                for page in reader.pages:
+                    text += (page.extract_text() or "") + "\n"
                 
         elif filename.endswith(".docx"):
             doc = Document(file_stream)

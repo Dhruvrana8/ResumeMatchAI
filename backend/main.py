@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from database import engine, Base
 from auth.routes import router as auth_router
 from upload.routes import router as upload_router
+from ats_score.routes import router as ats_router
 
 load_dotenv()
 
@@ -33,6 +34,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router)
 app.include_router(upload_router)
+app.include_router(ats_router)
 
 @app.get("/")
 async def root():

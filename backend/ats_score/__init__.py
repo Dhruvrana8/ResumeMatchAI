@@ -1,1 +1,1 @@
-# Auth module
+# ATS Score module
