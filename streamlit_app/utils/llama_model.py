@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 # Model configuration
 model_id = "meta-llama/Llama-3.2-3B-Instruct"
 
+# Fix for MPS memory allocation on Mac
+os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
+
+
 _pipe = None
 
 # Device setup
