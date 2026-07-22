@@ -4,11 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repo shape
 
-This repo contains **three independent applications** that are not built or deployed together. Changes in one rarely require changes in the others — check which app you're actually in before assuming shared code.
+This repo contains **two independent applications** that are not built or deployed together.
 
 - `backend/` — FastAPI API (auth, S3 document upload, LLM-based ATS scoring). This is what `frontend/` talks to.
 - `frontend/` — Next.js 16 app (App Router) that consumes `backend/`.
-- `streamlit_app/` — standalone Streamlit app with its **own**, separate ATS scoring implementation (rule-based scorer + its own LLM prompt engine). It does not call `backend/` and does not share code with it. Treat it as a second, parallel product, not a client of the FastAPI backend.
 
 ## Commands
 
@@ -36,16 +35,6 @@ pnpm lint
 
 Set `NEXT_PUBLIC_API_URL` to point at the backend (defaults to `http://localhost:8000`, see `lib/api.ts`).
 
-### streamlit_app (Python 3.11+, `uv`)
-
-```bash
-cd streamlit_app
-uv sync
-uv run streamlit run app.py     # http://localhost:8501
-```
-
-Requires `python -m spacy download en_core_web_sm` for the NLP path. `HUGGING_FACE_API` env var is needed for the LLM (Llama) features; `POSTGRES_URI` for saving extracted profiles.
-
 ## Architecture
 
 ### backend
@@ -64,12 +53,3 @@ Two different patterns coexist for calling the backend — know which one a give
 2. **`frontend/workflow/<feature>/<action>/`** — a controller/gateway/types split (`controller.ts` = business logic, `api_gateway.ts` = the actual `axios` call, `*.types.ts`) imported via the `@/workflow/...` path alias. Used by auth (e.g. `workflow/auth/login/`). Note `api_gateway.ts` hardcodes `baseURL: "http://localhost:8000"` rather than reading `NEXT_PUBLIC_API_URL` — inconsistent with `lib/api.ts`.
 
 UI components under `components/ui/` are shadcn/Radix primitives; `components.json` configures shadcn generation. App routes: `app/login`, `app/signup`, `app/dashboard`.
-
-### streamlit_app
-
-Two scoring engines live side by side here too:
-
-- `utils/ats_scoring.py` — deterministic, weighted rule-based scorer (weights documented in `streamlit_app/README.md`: keyword match 40%, density 15%, personal info 15%, skills 10%, experience 10%, education 5%, formatting 5%).
-- `utils/ats_engine.py` + `utils/llama_model.py` — a separate LLM-driven engine (see `ATS_ENGINE_GUIDE.md` for its modes/JSON schemas), independent from `ats_scoring.py` and from `backend/ats_score`.
-
-`utils/postgres_client.py` persists LLM-extracted profiles to `POSTGRES_URI`, unrelated to `backend`'s SQLAlchemy/Postgres setup. `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0` is set in `llama_model.py` to avoid MPS OOMs on Apple Silicon — keep this if touching model loading on Mac.
